@@ -1,4 +1,5 @@
 import argparse
+import shutil
 from pathlib import Path
 
 import dask
@@ -91,8 +92,8 @@ def main(aoi, input_path, like_path):
         print(f"Saving to {final_freq_loc}")
         freq.to_parquet(final_freq_loc)
 
-        # shutil.rmtree(tmp_loc1)
-        # shutil.rmtree(tmp_loc2)
+        shutil.rmtree(tmp_loc1)
+        shutil.rmtree(tmp_loc2)
     like = rts.Raster(like_path)
     freq = dgpd.read_parquet(final_freq_loc, calculate_divisions=True).set_crs(
         like.crs
