@@ -7,7 +7,7 @@ import numpy as np
 from dask.diagnostics import ProgressBar
 
 import raster_tools as rts
-from paths import CLEANED_RASTER_DATA_DIR, RAW_RASTER_DATA_DIR, STATES_PATH
+from paths import CLEANED_RASTER_DATA_DIR, RAW_RASTER_DATA_DIR
 
 DATA_TIF_FMT = "mtbs_{aoi}_{year}.tif"
 
