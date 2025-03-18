@@ -151,6 +151,9 @@ def _save_raster_to_points(raster_path, out_path, year, perims):
     npoints = len(points)
     nparts = max(int(np.round(npoints / TARGET_POINTS_PER_PARTITION)), 1)
     points = dgpd.from_geopandas(points, npartitions=nparts)
+    # dask_geopandas is currently bugged. Spatial partitions will randomly fail
+    # to load later in the pipeline
+    points.spatial_partitions = None
     points.to_parquet(out_path)
 
 
@@ -189,6 +192,7 @@ def combine_years(years, aoi_code, num_workers):
             if pts_path.exists():
                 ddfs.append(dgpd.read_parquet(pts_path))
         ddf = dd.concat(ddfs)
+        ddf.spatial_partitons = None
         ddf.to_parquet(get_points_combined_path(years, aoi_code))
 
 
