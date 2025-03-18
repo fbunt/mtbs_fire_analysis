@@ -6,6 +6,7 @@ import dask.dataframe as dd
 import dask_geopandas as dgpd
 import geopandas as gpd
 import numpy as np
+from affine import Affine
 from dask.diagnostics import ProgressBar
 from dask.distributed import Client, LocalCluster
 
@@ -119,6 +120,35 @@ def get_points_combined_path(years, aoi_code):
 
 
 TARGET_POINTS_PER_PARTITION = 1_200_000
+GEOHASH_GEOTRANSFORM = (
+    30.0,
+    0.0,
+    -2376135.0,
+    0.0,
+    -30.0,
+    3192585.0,
+    0.0,
+    0.0,
+    1.0,
+)
+GEOHASH_AFFINE = Affine(*GEOHASH_GEOTRANSFORM)
+GEOHASH_GRID_SHAPE = (98150, 155145)
+
+
+def _geohash(x, y):
+    inv_affine_matrix = np.array(
+        list(~GEOHASH_AFFINE), dtype="float64"
+    ).reshape(3, 3)
+    n = len(x)
+    # x, y, 1 for each column
+    xy1 = np.ones((3, n), dtype="float64")
+    xy1[0, :] = x
+    xy1[1, :] = y
+
+    cr1 = inv_affine_matrix @ xy1
+    rows = np.floor(cr1[1]).astype("int64")
+    cols = np.floor(cr1[0]).astype("int64")
+    return np.ravel_multi_index((rows, cols), GEOHASH_GRID_SHAPE)
 
 
 def _save_raster_to_points(raster_path, out_path, year, perims):
@@ -148,6 +178,9 @@ def _save_raster_to_points(raster_path, out_path, year, perims):
     geometry = points["geometry"].rename()
     points = points.drop(["geometry", "cell_box"], axis=1)
     points = gpd.GeoDataFrame(points, geometry=geometry)
+    # Set geohash to be flat index for reference grid defined by the
+    # geotransform above.
+    points["geohash"] = _geohash(geometry.x.to_numpy(), geometry.y.to_numpy())
     npoints = len(points)
     nparts = max(int(np.round(npoints / TARGET_POINTS_PER_PARTITION)), 1)
     points = dgpd.from_geopandas(points, npartitions=nparts)
