@@ -37,8 +37,9 @@ def main(aoi_code):
     if is_wus:
         aoi_code = "CONUS"
     raster_paths = sorted(
-        glob.glob(f"{RAW_RASTER_DATA_DIR}/**/*{aoi_code}*.tif")
+        glob.glob(f"{RAW_RASTER_DATA_DIR}/**/*_{aoi_code}_*.tif")
     )[:-2]
+    [print(p) for p in raster_paths]
     rasters = [rts.Raster(p) for p in raster_paths]
     if is_wus:
         crs = rasters[0].crs
