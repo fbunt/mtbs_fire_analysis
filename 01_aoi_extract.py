@@ -18,6 +18,7 @@ from paths import (
     ROOT_TMP_DIR,
     STATES_PATH,
 )
+import utils
 
 dask.config.set(
     {
@@ -138,21 +139,6 @@ GEOHASH_AFFINE_INV_MATRIX = np.array(
 GEOHASH_GRID_SHAPE = (100150, 157144)
 
 
-def _geohash(geometry):
-    x = geometry.x.to_numpy()
-    y = geometry.y.to_numpy()
-    n = len(x)
-    # x, y, 1 for each column
-    xy1 = np.ones((3, n), dtype="float64")
-    xy1[0, :] = x
-    xy1[1, :] = y
-
-    cr1 = GEOHASH_AFFINE_INV_MATRIX @ xy1
-    rows = np.floor(cr1[1]).astype("int64")
-    cols = np.floor(cr1[0]).astype("int64")
-    return np.ravel_multi_index((rows, cols), GEOHASH_GRID_SHAPE)
-
-
 def _join(points, perims):
     if len(points) > 1_000_000:
         print("Performing parallel join")
@@ -194,7 +180,8 @@ def _save_raster_to_points(raster_path, out_path, year, perims):
     points = gpd.GeoDataFrame(points, geometry=geometry)
     # Set geohash to be flat index for reference grid defined by the
     # geotransform above.
-    points["geohash"] = _geohash(geometry)
+    hasher = utils.GridGeohasher()
+    points["geohash"] = hasher.geohash(geometry)
     npoints = len(points)
     nparts = max(int(np.round(npoints / TARGET_POINTS_PER_PARTITION)), 1)
     points = dgpd.from_geopandas(points, npartitions=nparts)
