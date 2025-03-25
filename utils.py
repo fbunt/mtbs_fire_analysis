@@ -103,7 +103,7 @@ class GridGeohasher:
 
 
 def _add_geom(df, hasher):
-    geometry = hasher.revers_geohash(df["geohash"])
+    geometry = hasher.reverse_geohash(df["geohash"])
     return gpd.GeoDataFrame(df, geometry=geometry)
 
 
