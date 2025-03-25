@@ -3,13 +3,16 @@ import shutil
 from pathlib import Path
 
 import dask
+import dask.dataframe as dd
 import dask_geopandas as dgpd
+import geopandas as gpd
 import numpy as np
 import pandas as pd
 from dask.diagnostics import ProgressBar
 from dask.distributed import Client, LocalCluster
 
 import raster_tools as rts
+import utils
 from paths import RESULTS_DIR
 
 dask.config.set(
@@ -55,10 +58,10 @@ def main(aoi, input_path, like_path):
         tmp_loc1 = RESULTS_DIR / "freq_tmp1.pqt"
         if not tmp_loc1.exists():
             ddf = dgpd.read_parquet(input_path)
+            ddf.spartial_partitions = None
             groups = ddf.groupby("geohash")
             freq = groups.Ig_Date.count().astype("uint16").to_frame("freq")
-            geoms = groups.geometry.first().to_frame("geometry")
-            freq = dgpd.from_dask_dataframe(freq.join(geoms)).set_crs(ddf.crs)
+            # Move "geohash" from index to column
             freq = freq.reset_index()
             print(f"Saving to {tmp_loc1}")
             freq.to_parquet(tmp_loc1)
@@ -66,8 +69,9 @@ def main(aoi, input_path, like_path):
 
             client.restart()
 
-        freq = dgpd.read_parquet(tmp_loc1)
+        freq = dd.read_parquet(tmp_loc1)
         n = len(freq)
+        print(f"N Data Points: {n}")
 
         tmp_loc2 = RESULTS_DIR / "freq_tmp2.pqt"
         if not tmp_loc2.exists():
@@ -83,20 +87,21 @@ def main(aoi, input_path, like_path):
             client.restart()
 
         final_freq_loc = RESULTS_DIR / FREQ_OUT_DF_FMT.format(aoi=aoi)
-        freq = dgpd.read_parquet(tmp_loc2)
-        assert freq["geohash"].is_monotonic_increasing.compute()
-        sizes = [p.shape[0] for p in freq.partitions]
-        freq = freq.map_partitions(
-            _set_index, *sizes, clear_divisions=True, meta=freq._meta
-        )
-        print(f"Saving to {final_freq_loc}")
-        freq.to_parquet(final_freq_loc)
+        if not final_freq_loc.exists():
+            freq = dd.read_parquet(tmp_loc2)
+            assert freq["geohash"].is_monotonic_increasing.compute()
+            sizes = [p.shape[0] for p in freq.partitions]
+            freq = freq.map_partitions(
+                _set_index, *sizes, clear_divisions=True, meta=freq._meta
+            )
+            print(f"Saving to {final_freq_loc}")
+            freq.to_parquet(final_freq_loc)
 
         shutil.rmtree(tmp_loc1)
         shutil.rmtree(tmp_loc2)
     like = rts.Raster(like_path)
-    freq = dgpd.read_parquet(final_freq_loc, calculate_divisions=True).set_crs(
-        like.crs
+    freq = utils.add_geometry_from_geohash(
+        dd.read_parquet(final_freq_loc, calculate_divisions=True)
     )
     freq_vec = rts.Vector(freq, n)
     freq_raster = rts.rasterize.rasterize(freq_vec, like, field="freq")
