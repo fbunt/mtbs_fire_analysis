@@ -40,7 +40,7 @@ if __name__ == "__main__":
             "STATENS": "--",
             "AFFGEOID": "0000000US99",
             "GEOID": "99",
-            "STUSPS": "WUS",
+            "STUSPS": "CONUS",
             "NAME": "CONUS",
             "LSAD": "00",
             "ALAND": conus_states.ALAND.sum(),
