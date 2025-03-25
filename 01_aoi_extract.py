@@ -56,7 +56,7 @@ def _get_parser():
         default=5,
         help=(
             "Number of workers for Dask cluster when combining dataframes. "
-            "Default is 5.",
+            "Default is 5."
         ),
     )
     p.add_argument(
@@ -123,32 +123,46 @@ TARGET_POINTS_PER_PARTITION = 1_200_000
 GEOHASH_GEOTRANSFORM = (
     30.0,
     0.0,
-    -2376135.0,
+    -2406135.0,
     0.0,
     -30.0,
-    3192585.0,
+    3222585.0,
     0.0,
     0.0,
     1.0,
 )
-GEOHASH_AFFINE = Affine(*GEOHASH_GEOTRANSFORM)
-GEOHASH_GRID_SHAPE = (98150, 155145)
+GEOHASH_AFFINE_INV = ~Affine(*GEOHASH_GEOTRANSFORM)
+GEOHASH_AFFINE_INV_MATRIX = np.array(
+    list(GEOHASH_AFFINE_INV), dtype="float64"
+).reshape(3, 3)
+GEOHASH_GRID_SHAPE = (100150, 157144)
 
 
-def _geohash(x, y):
-    inv_affine_matrix = np.array(
-        list(~GEOHASH_AFFINE), dtype="float64"
-    ).reshape(3, 3)
+def _geohash(geometry):
+    x = geometry.x.to_numpy()
+    y = geometry.y.to_numpy()
     n = len(x)
     # x, y, 1 for each column
     xy1 = np.ones((3, n), dtype="float64")
     xy1[0, :] = x
     xy1[1, :] = y
 
-    cr1 = inv_affine_matrix @ xy1
+    cr1 = GEOHASH_AFFINE_INV_MATRIX @ xy1
     rows = np.floor(cr1[1]).astype("int64")
     cols = np.floor(cr1[0]).astype("int64")
     return np.ravel_multi_index((rows, cols), GEOHASH_GRID_SHAPE)
+
+
+def _join(points, perims):
+    if len(points) > 1_000_000:
+        print("Performing parallel join")
+        points = dgpd.from_geopandas(points, npartitions=10)
+        with ProgressBar():
+            points = points.sjoin(perims, how="inner").compute()
+    else:
+        print("Performing serial join")
+        points = gpd.sjoin(points, perims, how="inner")
+    return points
 
 
 def _save_raster_to_points(raster_path, out_path, year, perims):
@@ -169,7 +183,7 @@ def _save_raster_to_points(raster_path, out_path, year, perims):
     xhalf, yhalf = np.abs(raster.resolution) / 2
     points["cell_box"] = points.geometry.buffer(xhalf, cap_style="square")
     points = points.set_geometry("cell_box")
-    points = gpd.sjoin(points, perims, how="inner")
+    points = _join(points, perims)
     points = points.rename({"index_right": "perim_index"}, axis=1)
     assert "perim_index" in points.columns
     assert "index_right" not in points.columns
@@ -180,7 +194,7 @@ def _save_raster_to_points(raster_path, out_path, year, perims):
     points = gpd.GeoDataFrame(points, geometry=geometry)
     # Set geohash to be flat index for reference grid defined by the
     # geotransform above.
-    points["geohash"] = _geohash(geometry.x.to_numpy(), geometry.y.to_numpy())
+    points["geohash"] = _geohash(geometry)
     npoints = len(points)
     nparts = max(int(np.round(npoints / TARGET_POINTS_PER_PARTITION)), 1)
     points = dgpd.from_geopandas(points, npartitions=nparts)
@@ -212,7 +226,7 @@ def combine_years(years, aoi_code, num_workers):
     out_path = get_points_combined_path(years, aoi_code)
     if out_path.exists():
         print(
-            "Combined dataframe path '{out_path}' already present. Skipping."
+            f"Combined dataframe path '{out_path}' already present. Skipping."
         )
         return
     with (
