@@ -1,3 +1,5 @@
+# Preprocess eco regions
+# ref: https://www.epa.gov/eco-research/ecoregions-north-america
 import geopandas as gpd
 
 from defaults import DEFAULT_CRS
