@@ -6,13 +6,14 @@ import dask.dataframe as dd
 import dask_geopandas as dgpd
 import geopandas as gpd
 import numpy as np
-from affine import Affine
+import pandas as pd
 from dask.diagnostics import ProgressBar
 from dask.distributed import Client, LocalCluster
 
 import raster_tools as rts
 from paths import (
     CLEANED_RASTER_DATA_DIR,
+    ECO_REGIONS_PATH,
     PERIMS_PATH,
     RESULTS_DIR,
     ROOT_TMP_DIR,
@@ -104,6 +105,12 @@ def get_mtbs_perims_by_year_and_aoi(year, aoi_poly, crs):
     return perims[perims.intersects(aoi_poly)]
 
 
+def get_eco_regions_by_aoi(aoi_poly, crs):
+    eco_regions = gpd.read_file(ECO_REGIONS_PATH).to_crs(crs)
+    eco_regions = eco_regions[eco_regions.intersects(aoi_poly.buffer(50_000))]
+    return eco_regions
+
+
 def get_data_raster_path(year, aoi_code):
     return CLEANED_RASTER_DATA_DIR / DATA_TIF_FMT.format(
         aoi=aoi_code, year=year
@@ -121,28 +128,12 @@ def get_points_combined_path(years, aoi_code):
 
 
 TARGET_POINTS_PER_PARTITION = 1_200_000
-GEOHASH_GEOTRANSFORM = (
-    30.0,
-    0.0,
-    -2406135.0,
-    0.0,
-    -30.0,
-    3222585.0,
-    0.0,
-    0.0,
-    1.0,
-)
-GEOHASH_AFFINE_INV = ~Affine(*GEOHASH_GEOTRANSFORM)
-GEOHASH_AFFINE_INV_MATRIX = np.array(
-    list(GEOHASH_AFFINE_INV), dtype="float64"
-).reshape(3, 3)
-GEOHASH_GRID_SHAPE = (100150, 157144)
 
 
-def _join(points, perims):
-    if len(points) > 1_000_000:
+def parallel_sjoin(points, perims, nparts=10):
+    if len(points) > 50_000:
         print("Performing parallel join")
-        points = dgpd.from_geopandas(points, npartitions=10)
+        points = dgpd.from_geopandas(points, npartitions=nparts)
         with ProgressBar():
             points = points.sjoin(perims, how="inner").compute()
     else:
@@ -151,7 +142,25 @@ def _join(points, perims):
     return points
 
 
-def _save_raster_to_points(raster_path, out_path, year, perims):
+def _recover_orphans(points_pre, points_post, eco_regions):
+    orphans = points_pre[~points_pre.index.isin(points_post.index)]
+    orphans = orphans.sjoin_nearest(eco_regions, how="inner")
+    return pd.concat([points_post, orphans])
+
+
+def _join_with_eco_regions(points, eco_regions):
+    print(f"Joining {len(eco_regions)}")
+    n_pre = len(points)
+    points_pre = points
+    points = parallel_sjoin(points, eco_regions, 20)
+    n_post = len(points)
+    if n_pre != n_post:
+        print(f"N before: {n_pre}, N after: {n_post}, {n_post / n_pre = }")
+        points = _recover_orphans(points_pre, points, eco_regions)
+    return points.drop("index_right", axis=1)
+
+
+def _save_raster_to_points(raster_path, out_path, year, perims, eco_regions):
     raster = rts.Raster(str(raster_path))
     points = raster.to_points().compute()
     # Move index to column and rename to "geohash". The index created by
@@ -169,7 +178,8 @@ def _save_raster_to_points(raster_path, out_path, year, perims):
     xhalf, yhalf = np.abs(raster.resolution) / 2
     points["cell_box"] = points.geometry.buffer(xhalf, cap_style="square")
     points = points.set_geometry("cell_box")
-    points = _join(points, perims)
+    print(f"Joining {len(perims)}")
+    points = parallel_sjoin(points, perims, 20)
     points = points.rename({"index_right": "perim_index"}, axis=1)
     assert "perim_index" in points.columns
     assert "index_right" not in points.columns
@@ -178,16 +188,20 @@ def _save_raster_to_points(raster_path, out_path, year, perims):
     geometry = points["geometry"].rename()
     points = points.drop(["geometry", "cell_box"], axis=1)
     points = gpd.GeoDataFrame(points, geometry=geometry)
+    points = _join_with_eco_regions(points, eco_regions)
+    geometry = points["geometry"]
+    # Drop geometries to avoid dask_geopandas (bugs)
+    points = points.drop("geometry", axis=1)
     # Set geohash to be flat index for reference grid defined by the
     # geotransform above.
     hasher = utils.GridGeohasher()
     points["geohash"] = hasher.geohash(geometry)
     npoints = len(points)
     nparts = max(int(np.round(npoints / TARGET_POINTS_PER_PARTITION)), 1)
-    points = dgpd.from_geopandas(points, npartitions=nparts)
+    points = dd.from_pandas(points, npartitions=nparts)
     # dask_geopandas is currently bugged. Spatial partitions will randomly fail
     # to load later in the pipeline
-    points.spatial_partitions = None
+    # points.spatial_partitions = None
     points.to_parquet(out_path)
 
 
@@ -203,9 +217,12 @@ def save_raster_to_points(years, aoi_code, crs):
             print(f"---\nSkipping: {year}")
             continue
         perims = get_mtbs_perims_by_year_and_aoi(year, aoi_gs.values[0], crs)
+        eco_regions = get_eco_regions_by_aoi(aoi_gs.values[0], crs)
         print(f"---\nPreprocessing: {year}")
         with ProgressBar():
-            _save_raster_to_points(raster_path, pts_path, year, perims)
+            _save_raster_to_points(
+                raster_path, pts_path, year, perims, eco_regions
+            )
         print("Done")
 
 
@@ -224,9 +241,10 @@ def combine_years(years, aoi_code, num_workers):
         for year in years:
             pts_path = get_points_path(year, aoi_code)
             if pts_path.exists():
-                ddfs.append(dgpd.read_parquet(pts_path))
+                # ddfs.append(dgpd.read_parquet(pts_path))
+                ddfs.append(dd.read_parquet(pts_path))
         ddf = dd.concat(ddfs)
-        ddf.spatial_partitons = None
+        # ddf.spatial_partitons = None
         ddf.to_parquet(get_points_combined_path(years, aoi_code))
 
 
