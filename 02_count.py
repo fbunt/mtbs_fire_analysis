@@ -23,8 +23,8 @@ dask.config.set(
 )
 
 
-FREQ_OUT_DF_FMT = "freq_{aoi}.pqt"
-FREQ_RASTER_FMT = "freq_{aoi}.tif"
+FREQ_OUT_DF_FMT = "count_{aoi}.pqt"
+FREQ_RASTER_FMT = "count_{aoi}.tif"
 
 
 def _path(path):
@@ -54,59 +54,59 @@ def _set_index(part, *sizes, partition_info=None):
 
 
 def main(aoi, input_path, like_path):
-    with LocalCluster(n_workers=3) as cluster, Client(cluster) as client:
-        tmp_loc1 = RESULTS_DIR / "freq_tmp1.pqt"
+    with LocalCluster(n_workers=2) as cluster, Client(cluster) as client:
+        tmp_loc1 = RESULTS_DIR / "count_tmp1.pqt"
         if not tmp_loc1.exists():
             ddf = dgpd.read_parquet(input_path)
             ddf.spartial_partitions = None
             groups = ddf.groupby("geohash")
-            freq = groups.Ig_Date.count().astype("uint16").to_frame("freq")
+            count = groups.Ig_Date.count().astype("uint16").to_frame("count")
             # Move "geohash" from index to column
-            freq = freq.reset_index()
+            count = count.reset_index()
             print(f"Saving to {tmp_loc1}")
-            freq.to_parquet(tmp_loc1)
+            count.to_parquet(tmp_loc1)
             ddf = None
 
             client.restart()
 
-        freq = dd.read_parquet(tmp_loc1)
-        n = len(freq)
+        count = dd.read_parquet(tmp_loc1)
+        n = len(count)
         print(f"N Data Points: {n}")
 
-        tmp_loc2 = RESULTS_DIR / "freq_tmp2.pqt"
+        tmp_loc2 = RESULTS_DIR / "count_tmp2.pqt"
         if not tmp_loc2.exists():
             n_parts = n // 1_000_000
-            freq = (
-                freq.reset_index()
+            count = (
+                count.reset_index()
                 .repartition(npartitions=n_parts)
                 .sort_values("geohash")
             )
             print(f"Saving to {tmp_loc2}")
-            freq.to_parquet(tmp_loc2)
+            count.to_parquet(tmp_loc2)
 
             client.restart()
 
-        final_freq_loc = RESULTS_DIR / FREQ_OUT_DF_FMT.format(aoi=aoi)
-        if not final_freq_loc.exists():
-            freq = dd.read_parquet(tmp_loc2)
-            assert freq["geohash"].is_monotonic_increasing.compute()
-            sizes = [p.shape[0] for p in freq.partitions]
-            freq = freq.map_partitions(
-                _set_index, *sizes, clear_divisions=True, meta=freq._meta
+        final_count_loc = RESULTS_DIR / FREQ_OUT_DF_FMT.format(aoi=aoi)
+        if not final_count_loc.exists():
+            count = dd.read_parquet(tmp_loc2)
+            assert count["geohash"].is_monotonic_increasing.compute()
+            sizes = [p.shape[0] for p in count.partitions]
+            count = count.map_partitions(
+                _set_index, *sizes, clear_divisions=True, meta=count._meta
             )
-            print(f"Saving to {final_freq_loc}")
-            freq.to_parquet(final_freq_loc)
+            print(f"Saving to {final_count_loc}")
+            count.to_parquet(final_count_loc)
 
         shutil.rmtree(tmp_loc1)
         shutil.rmtree(tmp_loc2)
     like = rts.Raster(like_path)
-    freq = utils.add_geometry_from_geohash(
-        dd.read_parquet(final_freq_loc, calculate_divisions=True)
+    count = utils.add_geometry_from_geohash(
+        dd.read_parquet(final_count_loc, calculate_divisions=True)
     )
-    freq_vec = rts.Vector(freq, n)
-    freq_raster = rts.rasterize.rasterize(freq_vec, like, field="freq")
+    count_vec = rts.Vector(count, n)
+    count_raster = rts.rasterize.rasterize(count_vec, like, field="count")
     with ProgressBar():
-        freq_raster.save(str(RESULTS_DIR / FREQ_RASTER_FMT.format(aoi=aoi)))
+        count_raster.save(str(RESULTS_DIR / FREQ_RASTER_FMT.format(aoi=aoi)))
 
 
 if __name__ == "__main__":
