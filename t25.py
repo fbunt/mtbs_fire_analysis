@@ -1,8 +1,7 @@
-import matplotlib.gridspec as gridspec
-import matplotlib.pyplot as plt
+import argparse
+
 import numpy as np
 import polars as pl
-import seaborn as sns
 
 
 def build_dts_df(lf):
@@ -68,45 +67,56 @@ eco_to_str = {
 bss = [1, 2, 3, 4]
 bs_to_str = {1: "very low", 2: "low", 3: "med", 4: "high"}
 
-lf = pl.scan_parquet("../results/mtbs_WUS_1984_2022")
-ldts = build_dts_df(lf)
-dts = ldts.collect()
-eco_to_dts = {eco: dts.filter(pl.col("eco") == eco) for eco in ecos}
-eco_to_n = {
-    eco: ecdf_norm_value(df.select("dt").to_numpy().flatten())
-    for eco, df in eco_to_dts.items()
-}
-eco_to_bs_to_dts = {}
-for eco in ecos:
-    eco_to_bs_to_dts[eco] = {}
-    for bs in bss:
-        eco_to_bs_to_dts[eco][bs] = dts.filter(
-            (pl.col("eco") == eco) & (pl.col("bs1") == bs)
-        )
-bs_to_eco_to_dts = {}
-for bs in bss:
-    bs_to_eco_to_dts[bs] = {}
-    for eco in ecos:
-        bs_to_eco_to_dts[bs][eco] = eco_to_bs_to_dts[eco][bs]
-tdf = pl.DataFrame(
-    {
-        "eco": ecos,
-        "eco_str": [eco_to_str[eco] for eco in ecos],
-        "t25": [time_to_p_from(df, 0.25) for eco, df in eco_to_dts.items()],
-        **{
-            f"t25_bs={bs}": [
-                time_to_p_from(df, 0.25)  # , eco_to_n[eco])
-                for df in bs_to_eco_to_dts[bs].values()
-            ]
-            for bs in bss
-        },
-        "t50": [time_to_p_from(df, 0.5) for eco, df in eco_to_dts.items()],
-        **{
-            f"t50_bs={bs}": [
-                time_to_p_from(df, 0.5)  # , eco_to_n[eco])
-                for df in bs_to_eco_to_dts[bs].values()
-            ]
-            for bs in bss
-        },
+
+def _get_parser():
+    p = argparse.ArgumentParser()
+    p.add_argument("data_loc", help="Data location")
+    return p
+
+
+if __name__ == "__main__":
+    args = _get_parser().parse_args()
+    lf = pl.scan_parquet(args.data_loc)
+    ldts = build_dts_df(lf)
+    dts = ldts.collect()
+    eco_to_dts = {eco: dts.filter(pl.col("eco") == eco) for eco in ecos}
+    eco_to_n = {
+        eco: ecdf_norm_value(df.select("dt").to_numpy().flatten())
+        for eco, df in eco_to_dts.items()
     }
-)
+    eco_to_bs_to_dts = {}
+    for eco in ecos:
+        eco_to_bs_to_dts[eco] = {}
+        for bs in bss:
+            eco_to_bs_to_dts[eco][bs] = dts.filter(
+                (pl.col("eco") == eco) & (pl.col("bs1") == bs)
+            )
+    bs_to_eco_to_dts = {}
+    for bs in bss:
+        bs_to_eco_to_dts[bs] = {}
+        for eco in ecos:
+            bs_to_eco_to_dts[bs][eco] = eco_to_bs_to_dts[eco][bs]
+    tdf = pl.DataFrame(
+        {
+            "eco": ecos,
+            "eco_str": [eco_to_str[eco] for eco in ecos],
+            "t25": [
+                time_to_p_from(df, 0.25) for eco, df in eco_to_dts.items()
+            ],
+            **{
+                f"t25_bs={bs}": [
+                    time_to_p_from(df, 0.25)  # , eco_to_n[eco])
+                    for df in bs_to_eco_to_dts[bs].values()
+                ]
+                for bs in bss
+            },
+            "t50": [time_to_p_from(df, 0.5) for eco, df in eco_to_dts.items()],
+            **{
+                f"t50_bs={bs}": [
+                    time_to_p_from(df, 0.5)  # , eco_to_n[eco])
+                    for df in bs_to_eco_to_dts[bs].values()
+                ]
+                for bs in bss
+            },
+        }
+    )

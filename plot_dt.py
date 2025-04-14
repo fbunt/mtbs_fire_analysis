@@ -1,3 +1,5 @@
+import argparse
+
 import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import numpy as np
@@ -127,8 +129,16 @@ eco_to_str = {
 bs_to_str = {1: "very low", 2: "low", 3: "med", 4: "high"}
 
 
-lf = pl.scan_parquet("../results/mtbs_WUS_1984_2022")
-ldts = build_dts_df(lf)
-dts = ldts.collect()
-make_basic_bar_plots(dts, basic_hist)
-plt.show()
+def _get_parser():
+    p = argparse.ArgumentParser()
+    p.add_argument("data_loc", help="Data location")
+    return p
+
+
+if __name__ == "__main__":
+    args = _get_parser().parse_args()
+    lf = pl.scan_parquet(args.data_loc)
+    ldts = build_dts_df(lf)
+    dts = ldts.collect()
+    make_basic_bar_plots(dts, basic_hist)
+    plt.show()
