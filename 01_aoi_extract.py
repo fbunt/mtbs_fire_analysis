@@ -130,15 +130,16 @@ def get_points_combined_path(years, aoi_code):
 TARGET_POINTS_PER_PARTITION = 1_200_000
 
 
-def parallel_sjoin(points, perims, nparts=10):
+def parallel_sjoin(points, other, nparts=10):
+    print(f"Joining {len(points)} x {len(other)}")
     if len(points) > 50_000:
         print("Performing parallel join")
         points = dgpd.from_geopandas(points, npartitions=nparts)
         with ProgressBar():
-            points = points.sjoin(perims, how="inner").compute()
+            points = points.sjoin(other, how="inner").compute()
     else:
         print("Performing serial join")
-        points = gpd.sjoin(points, perims, how="inner")
+        points = gpd.sjoin(points, other, how="inner")
     return points
 
 
@@ -149,13 +150,13 @@ def _recover_orphans(points_pre, points_post, eco_regions):
 
 
 def _join_with_eco_regions(points, eco_regions):
-    print(f"Joining {len(eco_regions)}")
+    print(f"Joining {len(points)} x {len(eco_regions)}")
     n_pre = len(points)
     points_pre = points
     points = parallel_sjoin(points, eco_regions, 20)
     n_post = len(points)
     if n_pre != n_post:
-        print(f"N before: {n_pre}, N after: {n_post}, {n_post / n_pre = }")
+        print(f"Recovering {n_pre - n_post} orphaned points")
         points = _recover_orphans(points_pre, points, eco_regions)
     return points.drop("index_right", axis=1)
 
@@ -178,7 +179,6 @@ def _save_raster_to_points(raster_path, out_path, year, perims, eco_regions):
     xhalf, yhalf = np.abs(raster.resolution) / 2
     points["cell_box"] = points.geometry.buffer(xhalf, cap_style="square")
     points = points.set_geometry("cell_box")
-    print(f"Joining {len(perims)}")
     points = parallel_sjoin(points, perims, 20)
     points = points.rename({"index_right": "perim_index"}, axis=1)
     assert "perim_index" in points.columns
