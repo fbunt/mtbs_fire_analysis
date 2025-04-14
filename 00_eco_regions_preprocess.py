@@ -7,6 +7,8 @@ from paths import ECO_REGIONS_PATH, RAW_ECO_REGIONS_PATH
 
 if __name__ == "__main__":
     eco_full_df = gpd.read_file(RAW_ECO_REGIONS_PATH).to_crs(DEFAULT_CRS)
+    # Drop water
+    eco_full_df = eco_full_df[eco_full_df.NA_L1CODE != "0"]
     code123 = (
         # Split "XX.Y.ZZ --> ["XX", "Y", "ZZ"]
         eco_full_df.NA_L3CODE.str.split(".", n=2)
