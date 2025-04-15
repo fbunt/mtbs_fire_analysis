@@ -7,19 +7,22 @@ import dask_geopandas as dgpd
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+import polars as pl
+import time
 from dask.diagnostics import ProgressBar
 from dask.distributed import Client, LocalCluster
 
 import raster_tools as rts
+import utils
 from paths import (
     CLEANED_RASTER_DATA_DIR,
     ECO_REGIONS_PATH,
+    NLCD_PATH,
     PERIMS_PATH,
     RESULTS_DIR,
     ROOT_TMP_DIR,
     STATES_PATH,
 )
-import utils
 
 dask.config.set(
     {
@@ -29,6 +32,7 @@ dask.config.set(
 )
 
 DATA_TIF_FMT = "mtbs_{aoi}_{year}.tif"
+NLCD_TIF_FMT = "Annual_NLCD_LndCov_{year}_CU_C1V0.tif"
 TMP_PTS_FMT = "mtbs_{aoi}_{year}"
 COMBINED_OUT_FMT = "mtbs_{aoi}_{min_year}_{max_year}"
 
@@ -117,6 +121,10 @@ def get_data_raster_path(year, aoi_code):
     )
 
 
+def get_nlcd_raster_path(year):
+    return NLCD_PATH / NLCD_TIF_FMT.format(year=year)
+
+
 def get_points_path(year, aoi_code):
     return ROOT_TMP_DIR / TMP_PTS_FMT.format(aoi=aoi_code, year=year)
 
@@ -150,7 +158,7 @@ def _recover_orphans(points_pre, points_post, eco_regions):
 
 
 def _join_with_eco_regions(points, eco_regions):
-    print(f"Joining {len(points)} x {len(eco_regions)}")
+    print("Adding eco regions")
     n_pre = len(points)
     points_pre = points
     points = parallel_sjoin(points, eco_regions, 20)
@@ -161,8 +169,39 @@ def _join_with_eco_regions(points, eco_regions):
     return points.drop("index_right", axis=1)
 
 
-def _save_raster_to_points(raster_path, out_path, year, perims, eco_regions):
+def parallel_join(points, other, nparts=10):
+    print(f"Joining {len(points)} x {len(other)}")
+    points = dd.from_pandas(points, npartitions=nparts)
+    other = dd.from_pandas(other, npartitions=nparts)
+    return points.join(other, on="geohash", how="inner").compute()
+
+
+def _add_nlcd(points, nlcd_raster):
+    print("Adding NLCD")
+    start = time.time()
+    nlcd_points = (
+        nlcd_raster.to_points()
+        .drop(["band", "row", "col"], axis=1)
+        .rename(columns={"value": "nlcd"})
+        .compute()
+    )
+    hasher = utils.GridGeohasher()
+    nlcd_points["geohash"] = hasher.geohash(nlcd_points.geometry)
+    nlcd_points = nlcd_points.drop("geometry", axis=1)
+    # return parallel_join(points, nlcd_points, 20)
+    points = pl.from_pandas(points)
+    nlcd_points = pl.from_pandas(nlcd_points)
+    points = points.join(nlcd_points, on="geohash").to_pandas()
+    d = time.time() - start
+    print(f"{d // 60}min, {d % 60}s")
+    return points
+
+
+def _save_raster_to_points(
+    raster_path, nlcd_path, out_path, year, perims, eco_regions
+):
     raster = rts.Raster(str(raster_path))
+    nlcd = rts.Raster(nlcd_path).set_null(rts.Raster(raster.xmask))
     points = raster.to_points().compute()
     # Move index to column and rename to "geohash". The index created by
     # to_points is the flat index in the original array. Use  this rather than
@@ -196,6 +235,8 @@ def _save_raster_to_points(raster_path, out_path, year, perims, eco_regions):
     # geotransform above.
     hasher = utils.GridGeohasher()
     points["geohash"] = hasher.geohash(geometry)
+    geometry = None
+    points = _add_nlcd(points, nlcd)
     npoints = len(points)
     nparts = max(int(np.round(npoints / TARGET_POINTS_PER_PARTITION)), 1)
     points = dd.from_pandas(points, npartitions=nparts)
@@ -209,6 +250,7 @@ def save_raster_to_points(years, aoi_code, crs):
     aoi_gs = get_aoi_geom(aoi_code, crs)
     for year in years:
         raster_path = get_data_raster_path(year, aoi_code)
+        nlcd_path = get_nlcd_raster_path(year)
         if not raster_path.exists():
             print(f"---\nNo raster file. Skipping: {year}")
             continue
@@ -221,7 +263,7 @@ def save_raster_to_points(years, aoi_code, crs):
         print(f"---\nPreprocessing: {year}")
         with ProgressBar():
             _save_raster_to_points(
-                raster_path, pts_path, year, perims, eco_regions
+                raster_path, nlcd_path, pts_path, year, perims, eco_regions
             )
         print("Done")
 
