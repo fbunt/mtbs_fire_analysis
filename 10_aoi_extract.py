@@ -164,7 +164,7 @@ def _join_with_eco_regions(points, eco_regions):
     points = parallel_sjoin(points, eco_regions, 20)
     n_post = len(points)
     if n_pre != n_post:
-        print(f"Recovering {n_pre - n_post} orphaned points")
+        print(f"Recovering {n_pre - n_post:,} orphaned points")
         points = _recover_orphans(points_pre, points, eco_regions)
     return points.drop("index_right", axis=1)
 
@@ -185,6 +185,7 @@ def _add_nlcd(points, nlcd_raster):
         .rename(columns={"value": "nlcd"})
         .compute()
     )
+    print(f"{len(nlcd_points) = }")
     hasher = utils.GridGeohasher()
     nlcd_points["geohash"] = hasher.geohash(nlcd_points.geometry)
     nlcd_points = nlcd_points.drop("geometry", axis=1)
@@ -193,7 +194,7 @@ def _add_nlcd(points, nlcd_raster):
     nlcd_points = pl.from_pandas(nlcd_points)
     points = points.join(nlcd_points, on="geohash").to_pandas()
     d = time.time() - start
-    print(f"{d // 60}min, {d % 60}s")
+    print(f"{d // 60}min, {d % 60:.2f}s")
     return points
 
 
@@ -208,17 +209,32 @@ def _save_raster_to_points(
     # dask_geopandas' geohash or hilbert_distance functions because they do not
     # have the resolution to handle rasters of this size (i.e. CONUS scale @
     # 30m).
-    points = points.reset_index(names="geohash")
+    points = points.reset_index(drop=True)
     points = points.drop(["band", "row", "col"], axis=1).rename(
         {"value": "bs"}, axis=1
     )
+    print(
+        f"Size initial: {len(points):,}."
+        f" Loss/gain: {(len(points) - 0):+,}"
+    )
+    n = len(points)
     # Drop non-severity pixels
     points = points[points.bs < 5]
+    print(
+        f"Size after drop(bs < 5): {len(points):,}."
+        f" Loss/gain: {(len(points) - n):+,}"
+    )
+    n = len(points)
     points["year"] = np.array(year, dtype="uint16")
     xhalf, yhalf = np.abs(raster.resolution) / 2
     points["cell_box"] = points.geometry.buffer(xhalf, cap_style="square")
     points = points.set_geometry("cell_box")
     points = parallel_sjoin(points, perims, 20)
+    print(
+        f"Size after join(perims): {len(points):,}."
+        f" Loss/gain: {(len(points) - n):+,}"
+    )
+    n = len(points)
     points = points.rename({"index_right": "perim_index"}, axis=1)
     assert "perim_index" in points.columns
     assert "index_right" not in points.columns
@@ -228,6 +244,11 @@ def _save_raster_to_points(
     points = points.drop(["geometry", "cell_box"], axis=1)
     points = gpd.GeoDataFrame(points, geometry=geometry)
     points = _join_with_eco_regions(points, eco_regions)
+    print(
+        f"Size after join(eco_regions): {len(points):,}."
+        f" Loss/gain: {(len(points) - n):+,}"
+    )
+    n = len(points)
     geometry = points["geometry"]
     # Drop geometries to avoid dask_geopandas (bugs)
     points = points.drop("geometry", axis=1)
@@ -237,6 +258,10 @@ def _save_raster_to_points(
     points["geohash"] = hasher.geohash(geometry)
     geometry = None
     points = _add_nlcd(points, nlcd)
+    print(
+        f"Size after join(nlcd): {len(points):,}"
+        f" Loss/gain: {(len(points) - n):+,}"
+    )
     npoints = len(points)
     nparts = max(int(np.round(npoints / TARGET_POINTS_PER_PARTITION)), 1)
     points = dd.from_pandas(points, npartitions=nparts)
