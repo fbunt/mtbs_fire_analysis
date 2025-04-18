@@ -204,11 +204,6 @@ def _save_raster_to_points(
     raster = rts.Raster(str(raster_path))
     nlcd = rts.Raster(nlcd_path).set_null(rts.Raster(raster.xmask))
     points = raster.to_points().compute()
-    # Move index to column and rename to "geohash". The index created by
-    # to_points is the flat index in the original array. Use  this rather than
-    # dask_geopandas' geohash or hilbert_distance functions because they do not
-    # have the resolution to handle rasters of this size (i.e. CONUS scale @
-    # 30m).
     points = points.reset_index(drop=True)
     points = points.drop(["band", "row", "col"], axis=1).rename(
         {"value": "bs"}, axis=1
