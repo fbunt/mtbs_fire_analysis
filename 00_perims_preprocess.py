@@ -1,11 +1,7 @@
-from pathlib import Path
-
 import geopandas as gpd
 import numpy as np
 
 from paths import PERIMS_PATH, RAW_PERIMS_PATH
-
-MTBS_ROOT = Path("/var/mnt/fastdata02/mtbs")
 
 INCID_TYPE_MAPPING = {
     "Unknown": 0,
