@@ -1,4 +1,5 @@
 import argparse
+import itertools
 
 import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
@@ -7,27 +8,59 @@ import polars as pl
 import seaborn as sns
 
 
-def build_dts_df(lf):
+def flatmap(func, iterable):
+    return itertools.chain.from_iterable(map(func, iterable))
+
+
+def _if_names(col):
+    return f"{col}1", f"{col}2"
+
+
+def _if_exprs(col):
+    name1, name2 = _if_names(col)
+    return pl.col(col).alias(name1), pl.col(col).shift(-1).alias(name2)
+
+
+def build_dts_df(lf, if_cols=None):
+    """Build a dataframe of times between fires (dt).
+
+    Parameters
+    ----------
+    lf : polars.LazyFrame, polars.DataFrame
+        The dataframe to process.
+    if_cols : list, optional
+        The columns to get initial and final (if) values for at each dt. The
+        resulting dataframe will two columns for each input column. As an
+        example, if 'nlcd' is one of the input columns, the result will have
+        `'nlcd1'` and `'nlcd2'`.
+
+    Returns
+    -------
+    polars.LazyFrame, polars.DataFrame
+
+    """
+    if_cols = if_cols or []
+    assert "bs" not in if_cols
+    if_cols = ["bs"] + if_cols
     return (
         lf.group_by("geohash")
         .agg(
             pl.len().alias("n"),
             pl.col("eco_lvl_1").first().alias("eco"),
-            pl.col("Ig_Date", "bs"),
+            pl.col("Ig_Date", *if_cols),
         )
         .filter(pl.col("n") >= 2)
         .select(pl.exclude("n"))
-        .explode("Ig_Date", "bs")
+        .explode("Ig_Date", *if_cols)
         .sort("geohash", "Ig_Date")
         .group_by("geohash")
         .agg(
             pl.col("eco").first(),
             pl.col("Ig_Date").diff().shift(-1).dt.total_days().alias("dt")
             / 365,
-            pl.col("bs").alias("bs1"),
-            pl.col("bs").shift(-1).alias("bs2"),
+            *flatmap(_if_exprs, if_cols),
         )
-        .explode("dt", "bs1", "bs2")
+        .explode("dt", *flatmap(_if_names, if_cols))
         .drop_nulls()
     )
 
@@ -37,6 +70,18 @@ def basic_hist(ax, df, bs):
     ax.hist(dt, bins=np.arange(0, 40))
     ax.vlines(dt.mean(), 0, 1, transform=ax.get_xaxis_transform(), colors="r")
     ax.text(0.75, 0.8, f"Severity: {bs_to_str[bs]}", transform=ax.transAxes)
+    ax.set_xlim([0, 39])
+
+
+def sns_hist(ax, df, bs, weighting=False):
+    weights = None
+    if weighting:
+        df = df.with_columns(w=(38 / (38 - pl.col("dt").cast(pl.Int32))))
+        weights = "w"
+    pdf = df.to_pandas()
+    sns.histplot(
+        data=pdf, x="dt", weights=weights, bins=list(np.arange(0, 39)), ax=ax
+    )
     ax.set_xlim([0, 39])
 
 
@@ -140,5 +185,5 @@ if __name__ == "__main__":
     lf = pl.scan_parquet(args.data_loc)
     ldts = build_dts_df(lf)
     dts = ldts.collect()
-    make_basic_bar_plots(dts, basic_hist)
+    make_basic_bar_plots(dts, sns_hist_stacked)
     plt.show()
