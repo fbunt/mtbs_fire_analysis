@@ -1,6 +1,7 @@
 import geopandas as gpd
 import numpy as np
 
+from defaults import DEFAULT_CRS
 from paths import PERIMS_PATH, RAW_PERIMS_PATH
 
 INCID_TYPE_MAPPING = {
@@ -26,7 +27,7 @@ DROP_COLUMNS = ["Comment"]
 
 
 if __name__ == "__main__":
-    perims = gpd.read_file(RAW_PERIMS_PATH)
+    perims = gpd.read_file(RAW_PERIMS_PATH).to_crs(DEFAULT_CRS)
     perims = perims.drop(DROP_COLUMNS, axis=1)
     for k, mapping in MAPPINGS.items():
         perims[k] = (
@@ -34,4 +35,6 @@ if __name__ == "__main__":
             .apply(lambda x, mapping=mapping: mapping[x])
             .astype(np.uint8)
         )
+    perims["area_m2"] = perims.area
+    perims["area_acres"] = perims.area * 0.0002471054
     perims.to_parquet(PERIMS_PATH)
