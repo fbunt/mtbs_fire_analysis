@@ -12,25 +12,25 @@ def flatmap(func, iterable):
     return itertools.chain.from_iterable(map(func, iterable))
 
 
-def _if_names(col):
+def _extra_names(col):
     return f"{col}1", f"{col}2"
 
 
-def _if_exprs(col):
-    name1, name2 = _if_names(col)
+def _extra_exprs(col):
+    name1, name2 = _extra_names(col)
     return pl.col(col).alias(name1), pl.col(col).shift(-1).alias(name2)
 
 
-def build_dts_df(lf, if_cols=None):
+def build_dts_df(lf, extra_cols=None):
     """Build a dataframe of times between fires (dt).
 
     Parameters
     ----------
     lf : polars.LazyFrame, polars.DataFrame
         The dataframe to process.
-    if_cols : list, optional
-        The columns to get initial and final (if) values for at each dt. The
-        resulting dataframe will two columns for each input column. As an
+    extra_cols : list, optional
+        The extra columns to get initial and final values for at each dt. The
+        resulting dataframe will have two columns for each input column. As an
         example, if 'nlcd' is one of the input columns, the result will have
         `'nlcd1'` and `'nlcd2'`.
 
@@ -39,28 +39,28 @@ def build_dts_df(lf, if_cols=None):
     polars.LazyFrame, polars.DataFrame
 
     """
-    if_cols = if_cols or []
-    assert "bs" not in if_cols
-    if_cols = ["bs"] + if_cols
+    extra_cols = extra_cols or []
+    assert "bs" not in extra_cols
+    extra_cols = ["bs"] + extra_cols
     return (
         lf.group_by("geohash")
         .agg(
             pl.len().alias("n"),
             pl.col("eco_lvl_1").first().alias("eco"),
-            pl.col("Ig_Date", *if_cols),
+            pl.col("Ig_Date", *extra_cols),
         )
         .filter(pl.col("n") >= 2)
         .select(pl.exclude("n"))
-        .explode("Ig_Date", *if_cols)
+        .explode("Ig_Date", *extra_cols)
         .sort("geohash", "Ig_Date")
         .group_by("geohash")
         .agg(
             pl.col("eco").first(),
             pl.col("Ig_Date").diff().shift(-1).dt.total_days().alias("dt")
             / 365,
-            *flatmap(_if_exprs, if_cols),
+            *flatmap(_extra_exprs, extra_cols),
         )
-        .explode("dt", *flatmap(_if_names, if_cols))
+        .explode("dt", *flatmap(_extra_names, extra_cols))
         .drop_nulls()
     )
 
