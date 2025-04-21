@@ -176,6 +176,21 @@ def parallel_join(points, other, nparts=10):
     return points.join(other, on="geohash", how="inner").compute()
 
 
+def _drop_duplicates(points):
+    print("Dropping co-located points with same Ig_Date")
+    start = time.time()
+    points = pl.from_pandas(points)
+    # Tack on Event_ID so that we can deterministically choose which event to
+    # keep and which to drop.
+    points = points.sort("geohash", "Ig_Date", "Event_ID")
+    # Keep the last event as determined by Event_ID order
+    points = points.unique(subset=["geohash", "Ig_Date"], keep="last")
+    points = points.to_pandas()
+    d = time.time() - start
+    print(f"{d // 60}min, {d % 60:.2f}s")
+    return points
+
+
 def _add_nlcd(points, nlcd_raster):
     print("Adding NLCD")
     start = time.time()
@@ -252,6 +267,12 @@ def _save_raster_to_points(
     hasher = utils.GridGeohasher()
     points["geohash"] = hasher.geohash(geometry)
     geometry = None
+    points = _drop_duplicates(points)
+    print(
+        f"Size after drop(duplicated(geohash, Ig_Date)): {len(points):,}."
+        f" Loss/gain: {(len(points) - n):+,}"
+    )
+    n = len(points)
     points = _add_nlcd(points, nlcd)
     print(
         f"Size after join(nlcd): {len(points):,}"
