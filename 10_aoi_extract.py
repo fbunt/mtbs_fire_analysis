@@ -135,9 +135,6 @@ def get_points_combined_path(years, aoi_code):
     )
 
 
-TARGET_POINTS_PER_PARTITION = 1_200_000
-
-
 def parallel_sjoin(points, other, nparts=10):
     print(f"Joining {len(points)} x {len(other)}")
     if len(points) > 50_000:
@@ -213,7 +210,10 @@ def _add_nlcd(points, nlcd_raster):
     return points
 
 
-def _save_raster_to_points(
+TARGET_POINTS_PER_PARTITION = 1_200_000
+
+
+def _build_dataframe_and_save(
     raster_path, nlcd_path, out_path, year, perims, eco_regions
 ):
     raster = rts.Raster(str(raster_path))
@@ -223,11 +223,9 @@ def _save_raster_to_points(
     points = points.drop(["band", "row", "col"], axis=1).rename(
         {"value": "bs"}, axis=1
     )
-    print(
-        f"Size initial: {len(points):,}."
-        f" Loss/gain: {(len(points) - 0):+,}"
-    )
+    print(f"Size initial: {len(points):,}. Loss/gain: {(len(points) - 0):+,}")
     n = len(points)
+
     # Drop non-severity pixels
     points = points[points.bs < 5]
     print(
@@ -235,21 +233,24 @@ def _save_raster_to_points(
         f" Loss/gain: {(len(points) - n):+,}"
     )
     n = len(points)
+
+    # Create boxes representing pixels and perform a spatial join with the MTBS
+    # fire perimeter vectors
     points["year"] = np.array(year, dtype="uint16")
     xhalf, yhalf = np.abs(raster.resolution) / 2
     points["cell_box"] = points.geometry.buffer(xhalf, cap_style="square")
     points = points.set_geometry("cell_box")
     points = parallel_sjoin(points, perims, 20)
+    points = points.rename({"index_right": "perim_index"}, axis=1)
+    assert "perim_index" in points.columns
+    assert "index_right" not in points.columns
     print(
         f"Size after join(perims): {len(points):,}."
         f" Loss/gain: {(len(points) - n):+,}"
     )
     n = len(points)
-    points = points.rename({"index_right": "perim_index"}, axis=1)
-    assert "perim_index" in points.columns
-    assert "index_right" not in points.columns
-    # Drop the cell_box column and set the point values back as the geometry
-    # column.
+
+    # Join with eco regions vectors
     geometry = points["geometry"].rename()
     points = points.drop(["geometry", "cell_box"], axis=1)
     points = gpd.GeoDataFrame(points, geometry=geometry)
@@ -259,31 +260,32 @@ def _save_raster_to_points(
         f" Loss/gain: {(len(points) - n):+,}"
     )
     n = len(points)
+
+    # Geohash the grid points so we can drop geometry data entirely
     geometry = points["geometry"]
     # Drop geometries to avoid dask_geopandas (bugs)
     points = points.drop("geometry", axis=1)
-    # Set geohash to be flat index for reference grid defined by the
-    # geotransform above.
     hasher = utils.GridGeohasher()
     points["geohash"] = hasher.geohash(geometry)
     geometry = None
+
     points = _drop_duplicates(points)
     print(
         f"Size after drop(duplicated(geohash, Ig_Date)): {len(points):,}."
         f" Loss/gain: {(len(points) - n):+,}"
     )
     n = len(points)
+
     points = _add_nlcd(points, nlcd)
     print(
         f"Size after join(nlcd): {len(points):,}"
         f" Loss/gain: {(len(points) - n):+,}"
     )
+
+    # Convert to dask dataframe for saving in parallel
     npoints = len(points)
     nparts = max(int(np.round(npoints / TARGET_POINTS_PER_PARTITION)), 1)
     points = dd.from_pandas(points, npartitions=nparts)
-    # dask_geopandas is currently bugged. Spatial partitions will randomly fail
-    # to load later in the pipeline
-    # points.spatial_partitions = None
     points.to_parquet(out_path)
 
 
@@ -303,7 +305,7 @@ def save_raster_to_points(years, aoi_code, crs):
         eco_regions = get_eco_regions_by_aoi(aoi_gs.values[0], crs)
         print(f"---\nPreprocessing: {year}")
         with ProgressBar():
-            _save_raster_to_points(
+            _build_dataframe_and_save(
                 raster_path, nlcd_path, pts_path, year, perims, eco_regions
             )
         print("Done")
