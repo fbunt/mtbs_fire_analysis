@@ -42,21 +42,23 @@ def build_dts_df(lf, extra_cols=None):
     extra_cols = extra_cols or []
     assert "bs" not in extra_cols
     extra_cols = ["bs"] + extra_cols
+    ig_dt = "_ig_date_"
     return (
         lf.group_by("geohash")
         .agg(
             pl.len().alias("n"),
             pl.col("eco_lvl_1").first().alias("eco"),
-            pl.col("Ig_Date", *extra_cols),
+            pl.col("Ig_Date").alias(ig_dt),
+            pl.col(*extra_cols),
         )
         .filter(pl.col("n") >= 2)
         .select(pl.exclude("n"))
-        .explode("Ig_Date", *extra_cols)
-        .sort("geohash", "Ig_Date")
+        .explode(ig_dt, *extra_cols)
+        .sort("geohash", ig_dt)
         .group_by("geohash")
         .agg(
             pl.col("eco").first(),
-            pl.col("Ig_Date").diff().shift(-1).dt.total_days().alias("dt")
+            pl.col(ig_dt).diff().shift(-1).dt.total_days().alias("dt")
             / 365,
             *flatmap(_extra_exprs, extra_cols),
         )
