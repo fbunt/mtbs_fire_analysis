@@ -19,3 +19,8 @@ ECO_REGIONS_PATH = ECO_REGIONS_DIR / "cleaned" / "eco_regions.shp"
 NLCD_DIR = MTBS_ROOT / "nlcd"
 RAW_NLCD = NLCD_DIR / "raw"
 NLCD_PATH = NLCD_DIR / "cleaned"
+
+WUI_DIR = MTBS_ROOT / "wui"
+RAW_WUI = WUI_DIR / "raw" / "CONUS_WUI_block_1990_2020_change_v4.gdb"
+INTERMEDIATE_WUI = WUI_DIR / "intermediate" / "wui.gpkg"
+WUI_PATH = WUI_DIR / "cleaned"
