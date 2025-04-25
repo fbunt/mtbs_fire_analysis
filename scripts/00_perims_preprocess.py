@@ -16,14 +16,24 @@ ASMNT_TYPE = {
     "Extended": 2,
     "Extended (SS)": 3,
 }
-MAP_PROG_MAPPING = {"MTBS": 0}
 MAPPINGS = {
     "Incid_Type": INCID_TYPE_MAPPING,
     "Asmnt_Type": ASMNT_TYPE,
-    "Map_Prog": MAP_PROG_MAPPING,
 }
 
-DROP_COLUMNS = ["Comment"]
+DROP_COLUMNS = [
+    "irwinID",
+    "Map_ID",
+    "Map_Prog",
+    "BurnBndAc",
+    "BurnBndLat",
+    "BurnBndLon",
+    "Pre_ID",
+    "Post_ID",
+    "Perim_ID",
+    "NoData_T",
+    "Comment",
+]
 
 
 if __name__ == "__main__":
