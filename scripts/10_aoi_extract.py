@@ -22,6 +22,7 @@ from paths import (
     RESULTS_DIR,
     ROOT_TMP_DIR,
     STATES_PATH,
+    WUI_PATH,
 )
 
 dask.config.set(
@@ -115,7 +116,7 @@ def get_eco_regions_by_aoi(aoi_poly, crs):
     return eco_regions
 
 
-def get_data_raster_path(year, aoi_code):
+def get_mtbs_raster_path(year, aoi_code):
     return CLEANED_RASTER_DATA_DIR / DATA_TIF_FMT.format(
         aoi=aoi_code, year=year
     )
@@ -127,6 +128,26 @@ def get_nlcd_raster_path(year):
 
 def get_points_path(year, aoi_code):
     return ROOT_TMP_DIR / TMP_PTS_FMT.format(aoi=aoi_code, year=year)
+
+
+def _get_wui_path(year, flavor):
+    if year < 2000:
+        y = 1990
+    elif 2000 <= year < 2010:
+        y = 2000
+    elif 2010 <= year < 2020:
+        y = 2010
+    else:
+        y = 2020
+    return WUI_PATH / f"wui{flavor}{y}.tif"
+
+
+def get_wui_flag_path(year):
+    return _get_wui_path(year, "flag")
+
+
+def get_wui_class_path(year):
+    return _get_wui_path(year, "class")
 
 
 def get_points_combined_path(years, aoi_code):
@@ -188,41 +209,63 @@ def _drop_duplicates(points):
     return points
 
 
-def _add_nlcd(points, nlcd_raster):
-    print("Adding NLCD")
+def _add_raster(points, raster, name):
+    print(f"Adding {name}")
     start = time.time()
-    nlcd_points = (
-        nlcd_raster.to_points()
+    other_points = (
+        raster.to_points()
         .drop(["band", "row", "col"], axis=1)
-        .rename(columns={"value": "nlcd"})
+        .rename(columns={"value": name})
         .compute()
     )
-    print(f"{len(nlcd_points) = }")
+    print(f"{len(other_points) = :,}")
     hasher = utils.GridGeohasher()
-    nlcd_points["geohash"] = hasher.geohash(nlcd_points.geometry)
-    nlcd_points = nlcd_points.drop("geometry", axis=1)
-    # return parallel_join(points, nlcd_points, 20)
+    other_points["geohash"] = hasher.geohash(other_points.geometry)
+    other_points = other_points.drop("geometry", axis=1)
+    # return parallel_join(points, other_points, 20)
     points = pl.from_pandas(points)
-    nlcd_points = pl.from_pandas(nlcd_points)
-    points = points.join(nlcd_points, on="geohash").to_pandas()
+    other_points = pl.from_pandas(other_points)
+    points = points.join(other_points, on="geohash").to_pandas()
     d = time.time() - start
     print(f"{d // 60}min, {d % 60:.2f}s")
     return points
+
+
+def _get_initial_points(mtbs_path):
+    mtbs = rts.Raster(str(mtbs_path))
+    points = mtbs.to_points().compute()
+    points = points.reset_index(drop=True)
+    return points.drop(["band", "row", "col"], axis=1).rename(
+        {"value": "bs"}, axis=1
+    )
+
+
+def _get_nlcd_raster(nlcd_path, mtbs_path):
+    mtbs = rts.Raster(str(mtbs_path))
+    return rts.Raster(nlcd_path).set_null(rts.Raster(mtbs.xmask))
+
+
+def _get_wui_raster(wui_path, mtbs_path):
+    raster = rts.Raster(str(mtbs_path))
+    return rts.clipping.clip_box(rts.Raster(wui_path), raster.bounds).set_null(
+        rts.Raster(raster.xmask)
+    )
 
 
 TARGET_POINTS_PER_PARTITION = 1_200_000
 
 
 def _build_dataframe_and_save(
-    raster_path, nlcd_path, out_path, year, perims, eco_regions
+    mtbs_path,
+    nlcd_path,
+    wui_flag_path,
+    wui_class_path,
+    out_path,
+    year,
+    perims,
+    eco_regions,
 ):
-    raster = rts.Raster(str(raster_path))
-    nlcd = rts.Raster(nlcd_path).set_null(rts.Raster(raster.xmask))
-    points = raster.to_points().compute()
-    points = points.reset_index(drop=True)
-    points = points.drop(["band", "row", "col"], axis=1).rename(
-        {"value": "bs"}, axis=1
-    )
+    points = _get_initial_points(mtbs_path)
     print(f"Size initial: {len(points):,}. Loss/gain: {(len(points) - 0):+,}")
     n = len(points)
 
@@ -237,7 +280,7 @@ def _build_dataframe_and_save(
     # Create boxes representing pixels and perform a spatial join with the MTBS
     # fire perimeter vectors
     points["year"] = np.array(year, dtype="uint16")
-    xhalf, yhalf = np.abs(raster.resolution) / 2
+    xhalf, yhalf = np.abs(rts.Raster(str(mtbs_path)).resolution) / 2
     points["cell_box"] = points.geometry.buffer(xhalf, cap_style="square")
     points = points.set_geometry("cell_box")
     points = parallel_sjoin(points, perims, 20)
@@ -276,15 +319,33 @@ def _build_dataframe_and_save(
     )
     n = len(points)
 
-    points = _add_nlcd(points, nlcd)
+    points = _add_raster(
+        points, _get_nlcd_raster(nlcd_path, mtbs_path), "nlcd"
+    )
     print(
         f"Size after join(nlcd): {len(points):,}"
         f" Loss/gain: {(len(points) - n):+,}"
     )
+    n = len(points)
+    points = _add_raster(
+        points, _get_wui_raster(wui_flag_path, mtbs_path), "wui_flag"
+    )
+    print(
+        f"Size after join(wui_flag): {len(points):,}"
+        f" Loss/gain: {(len(points) - n):+,}"
+    )
+    n = len(points)
+    points = _add_raster(
+        points, _get_wui_raster(wui_flag_path, mtbs_path), "wui_class"
+    )
+    print(
+        f"Size after join(wui_class): {len(points):,}"
+        f" Loss/gain: {(len(points) - n):+,}"
+    )
+    n = len(points)
 
     # Convert to dask dataframe for saving in parallel
-    npoints = len(points)
-    nparts = max(int(np.round(npoints / TARGET_POINTS_PER_PARTITION)), 1)
+    nparts = max(int(np.round(n / TARGET_POINTS_PER_PARTITION)), 1)
     points = dd.from_pandas(points, npartitions=nparts)
     points.to_parquet(out_path)
 
@@ -292,9 +353,11 @@ def _build_dataframe_and_save(
 def save_raster_to_points(years, aoi_code, crs):
     aoi_gs = get_aoi_geom(aoi_code, crs)
     for year in years:
-        raster_path = get_data_raster_path(year, aoi_code)
+        mtbs_path = get_mtbs_raster_path(year, aoi_code)
         nlcd_path = get_nlcd_raster_path(year)
-        if not raster_path.exists():
+        wui_flag_path = get_wui_flag_path(year)
+        wui_class_path = get_wui_class_path(year)
+        if not mtbs_path.exists():
             print(f"---\nNo raster file. Skipping: {year}")
             continue
         pts_path = get_points_path(year, aoi_code)
@@ -306,7 +369,14 @@ def save_raster_to_points(years, aoi_code, crs):
         print(f"---\nPreprocessing: {year}")
         with ProgressBar():
             _build_dataframe_and_save(
-                raster_path, nlcd_path, pts_path, year, perims, eco_regions
+                mtbs_path,
+                nlcd_path,
+                wui_flag_path,
+                wui_class_path,
+                pts_path,
+                year,
+                perims,
+                eco_regions,
             )
         print("Done")
 
