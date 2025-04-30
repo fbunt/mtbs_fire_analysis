@@ -3,6 +3,8 @@ import dask_geopandas as dgpd
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+import tqdm
+from dask.diagnostics import ProgressBar
 from paths import INTERMEDIATE_WUI, RAW_WUI
 
 # Water               : open water
@@ -58,28 +60,43 @@ KEEP_COLS = [
     "WUIFLAG2010",
     "WUIFLAG2020",
 ]
-LAYERS = [col.lower() for col in KEEP_COLS]
+
+
+def _renamer(name):
+    if name == "geometry":
+        return "geometry"
+
+    year = name[-4:]
+    if "CLASS" in name:
+        new_name = f"wui_class_{year}"
+    elif "FLAG" in name:
+        new_name = f"wui_flag_{year}"
+    else:
+        new_name = name
+    return new_name
 
 
 def load_raw_wui_gdf(path):
     print("Loading WUI data from raw")
     ddf = dgpd.read_file(path, npartitions=20)[KEEP_COLS + ["geometry"]]
     parts = list(ddf.partitions)
-    (parts,) = dask.compute(parts)
+    with ProgressBar():
+        (parts,) = dask.compute(parts)
+    print("Fixing invalid geometries")
+    for part in tqdm.tqdm(parts, ncols=80):
+        part["geometry"] = part.geometry.make_valid()
     frame = pd.concat(parts)
     parts = None
+    print("Mapping strings to ints")
     for col in [col for col in KEEP_COLS if "CLASS" in col]:
         frame[col] = frame[col].map(WUI_CLASS_MAPPING)
-    return frame.astype(dict.fromkeys(KEEP_COLS, np.uint8))
+    frame = frame.astype(dict.fromkeys(KEEP_COLS, np.uint8))
+    return frame.rename(columns=_renamer)
 
 
 def write_wui_gdf_to_gpkg(gdf, gpkg_path):
     print("Writing WUI data to intermediate gpkg")
-    for col in KEEP_COLS:
-        print(f"Writing {col}")
-        gdf[[col, "geometry"]].to_file(
-            gpkg_path, driver="GPKG", layer=col.lower()
-        )
+    gdf.to_file(gpkg_path, driver="GPKG", layer="wui")
     print("Done")
 
 
