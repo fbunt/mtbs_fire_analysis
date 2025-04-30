@@ -139,7 +139,7 @@ def _get_wui_path(year, flavor):
         y = 2010
     else:
         y = 2020
-    return WUI_PATH / f"wui{flavor}{y}.tif"
+    return WUI_PATH / f"wui_{flavor}_{y}.tif"
 
 
 def get_wui_flag_path(year):
