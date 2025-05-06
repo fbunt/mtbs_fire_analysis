@@ -48,3 +48,5 @@ PROJCRS["USA_Contiguous_Albers_Equal_Area_Conic_USGS_version",
                 ID["EPSG",9001]]]]
 """
 )
+
+DEFAULT_PROX_MAX_DIST = 40_500
