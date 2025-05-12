@@ -31,5 +31,6 @@ max_dist=$(python -c "from defaults import DEFAULT_PROX_MAX_DIST; print(DEFAULT_
 for year in "${years[@]}"; do
     src="${src_dir}/wui_bool_${year}.tif"
     dst="${dst_dir}/wui_prox_${year}.tif"
-    exe gdal_proximity "${src}" "${dst}" -values 1 -distunits GEO -maxdist "${max_dist}"
+    exe gdal_proximity "${src}" "${dst}" \
+        -values 1 -distunits GEO -maxdist "${max_dist}"
 done
