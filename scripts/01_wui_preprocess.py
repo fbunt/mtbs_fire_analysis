@@ -51,7 +51,7 @@ def build_save_part(
     # print(f"{ipart}: Done. {len(part) = }")
     # print(f"{ipart}: Exploding")
     # part = part.explode()
-    # print(f"{ipart}: Done. {len(part) = }")
+    print(f"{ipart}: Done. {len(part) = }")
     print(f"{ipart}: Saving to {out_path}")
     part.to_parquet(out_path)
     print(f"{ipart}: Done")
