@@ -85,6 +85,12 @@ def parallel_join(points, other, nparts=10):
     return points.join(other, on="geohash", how="inner").compute()
 
 
+def polars_join(points, other):
+    points = pl.from_pandas(points)
+    other_points = pl.from_pandas(other)
+    return points.join(other_points, on="geohash").to_pandas()
+
+
 def _drop_duplicates(points):
     print("Dropping co-located points with same Ig_Date")
     start = time.time()
@@ -113,10 +119,7 @@ def _add_raster(points, raster, name):
     hasher = utils.GridGeohasher()
     other_points["geohash"] = hasher.geohash(other_points.geometry)
     other_points = other_points.drop("geometry", axis=1)
-    # return parallel_join(points, other_points, 20)
-    points = pl.from_pandas(points)
-    other_points = pl.from_pandas(other_points)
-    points = points.join(other_points, on="geohash").to_pandas()
+    points = polars_join(points, other_points)
     d = time.time() - start
     print(f"{d // 60}min, {d % 60:.2f}s")
     return points
@@ -151,6 +154,8 @@ def _build_dataframe_and_save(
     nlcd_path,
     wui_flag_path,
     wui_class_path,
+    wui_bool_path,
+    wui_prox_path,
     out_path,
     year,
     perims,
@@ -234,6 +239,23 @@ def _build_dataframe_and_save(
         f" Loss/gain: {(len(points) - n):+,}"
     )
     n = len(points)
+    points = _add_raster(
+        points, _get_wui_raster(wui_bool_path, mtbs_path), "wui_bool"
+    )
+    print(
+        f"Size after join(wui_bool): {len(points):,}"
+        f" Loss/gain: {(len(points) - n):+,}"
+    )
+    n = len(points)
+
+    points = _add_raster(
+        points, _get_wui_raster(wui_prox_path, mtbs_path), "wui_prox"
+    )
+    print(
+        f"Size after join(wui_prox): {len(points):,}"
+        f" Loss/gain: {(len(points) - n):+,}"
+    )
+    n = len(points)
 
     # Convert to dask dataframe for saving in parallel
     nparts = max(int(np.round(n / TARGET_POINTS_PER_PARTITION)), 1)
@@ -248,6 +270,8 @@ def save_raster_to_points(years, aoi_code, crs):
         nlcd_path = get_nlcd_raster_path(year)
         wui_flag_path = get_wui_flavor_path(year, "flag")
         wui_class_path = get_wui_flavor_path(year, "class")
+        wui_bool_path = get_wui_flavor_path(year, "bool")
+        wui_prox_path = get_wui_flavor_path(year, "prox")
         if not mtbs_path.exists():
             print(f"---\nNo raster file. Skipping: {year}")
             continue
@@ -264,6 +288,8 @@ def save_raster_to_points(years, aoi_code, crs):
                 nlcd_path,
                 wui_flag_path,
                 wui_class_path,
+                wui_bool_path,
+                wui_prox_path,
                 pts_path,
                 year,
                 perims,
