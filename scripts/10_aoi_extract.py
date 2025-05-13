@@ -1,95 +1,26 @@
 import argparse
-from pathlib import Path
 
-import dask
 import dask.dataframe as dd
 import dask_geopandas as dgpd
 import geopandas as gpd
 import numpy as np
 import pandas as pd
 import polars as pl
+import raster_tools as rts
 import time
 from dask.diagnostics import ProgressBar
-from dask.distributed import Client, LocalCluster
 
-import raster_tools as rts
 import utils
+from defaults import DEFAULT_CRS
 from paths import (
-    CLEANED_RASTER_DATA_DIR,
     ECO_REGIONS_PATH,
-    NLCD_PATH,
     PERIMS_PATH,
-    RESULTS_DIR,
-    ROOT_TMP_DIR,
     STATES_PATH,
-    WUI_PATH,
+    get_mtbs_raster_path,
+    get_nlcd_raster_path,
+    get_points_path,
+    get_wui_flavor_path,
 )
-
-dask.config.set(
-    {
-        "distributed.nanny.pre-spawn-environ.MALLOC_TRIM_THRESHOLD_": 0,
-        "distributed.nanny.environ.MALLOC_TRIM_THRESHOLD_": 0,
-    }
-)
-
-DATA_TIF_FMT = "mtbs_{aoi}_{year}.tif"
-NLCD_TIF_FMT = "Annual_NLCD_LndCov_{year}_CU_C1V0.tif"
-TMP_PTS_FMT = "mtbs_{aoi}_{year}"
-COMBINED_OUT_FMT = "mtbs_{aoi}_{min_year}_{max_year}"
-
-
-def _path(path):
-    path = Path(path)
-    assert path.exists()
-    return path
-
-
-DESC = """
-Convert MTBS rasters to a large dataframe of points.
-
-
-This is done in two steps. First, the raster for each year is converted to a
-parquet dataframe on disk. Then, the dataframes are combined into one large
-dataframe and saved as a large parquet file(s).
-"""
-
-
-def _get_parser():
-    p = argparse.ArgumentParser(description=DESC)
-    p.add_argument(
-        "-j",
-        "--num_workers",
-        type=int,
-        default=5,
-        help=(
-            "Number of workers for Dask cluster when combining dataframes. "
-            "Default is 5."
-        ),
-    )
-    p.add_argument(
-        "--crs_file",
-        default=CLEANED_RASTER_DATA_DIR / "mtbs_CONUS_1984.tif",
-        type=_path,
-        help="File to pull the CRS from",
-    )
-    p.add_argument(
-        "--min_year",
-        default=1984,
-        type=int,
-        help="Minnimum year to pull data from",
-    )
-    p.add_argument(
-        "--max_year",
-        default=2022,
-        type=int,
-        help="Maximum year to pull data from",
-    )
-    p.add_argument(
-        "aoi",
-        type=str,
-        help="The area of interest (AOI) code to pull points from",
-    )
-    return p
 
 
 def get_aoi_geom(aoi_code, crs):
@@ -114,46 +45,6 @@ def get_eco_regions_by_aoi(aoi_poly, crs):
     eco_regions = gpd.read_file(ECO_REGIONS_PATH).to_crs(crs)
     eco_regions = eco_regions[eco_regions.intersects(aoi_poly.buffer(50_000))]
     return eco_regions
-
-
-def get_mtbs_raster_path(year, aoi_code):
-    return CLEANED_RASTER_DATA_DIR / DATA_TIF_FMT.format(
-        aoi=aoi_code, year=year
-    )
-
-
-def get_nlcd_raster_path(year):
-    return NLCD_PATH / NLCD_TIF_FMT.format(year=year)
-
-
-def get_points_path(year, aoi_code):
-    return ROOT_TMP_DIR / TMP_PTS_FMT.format(aoi=aoi_code, year=year)
-
-
-def _get_wui_path(year, flavor):
-    if year < 2000:
-        y = 1990
-    elif 2000 <= year < 2010:
-        y = 2000
-    elif 2010 <= year < 2020:
-        y = 2010
-    else:
-        y = 2020
-    return WUI_PATH / f"wui_{flavor}_{y}.tif"
-
-
-def get_wui_flag_path(year):
-    return _get_wui_path(year, "flag")
-
-
-def get_wui_class_path(year):
-    return _get_wui_path(year, "class")
-
-
-def get_points_combined_path(years, aoi_code):
-    return RESULTS_DIR / COMBINED_OUT_FMT.format(
-        aoi=aoi_code, min_year=np.min(years), max_year=np.max(years)
-    )
 
 
 def parallel_sjoin(points, other, nparts=10):
@@ -355,8 +246,8 @@ def save_raster_to_points(years, aoi_code, crs):
     for year in years:
         mtbs_path = get_mtbs_raster_path(year, aoi_code)
         nlcd_path = get_nlcd_raster_path(year)
-        wui_flag_path = get_wui_flag_path(year)
-        wui_class_path = get_wui_class_path(year)
+        wui_flag_path = get_wui_flavor_path(year, "flag")
+        wui_class_path = get_wui_flavor_path(year, "class")
         if not mtbs_path.exists():
             print(f"---\nNo raster file. Skipping: {year}")
             continue
@@ -381,41 +272,44 @@ def save_raster_to_points(years, aoi_code, crs):
         print("Done")
 
 
-def combine_years(years, aoi_code, num_workers):
-    out_path = get_points_combined_path(years, aoi_code)
-    if out_path.exists():
-        print(
-            f"Combined dataframe path '{out_path}' already present. Skipping."
-        )
-        return
-    with (
-        LocalCluster(n_workers=num_workers) as cluster,
-        Client(cluster) as client,
-    ):
-        ddfs = []
-        for year in years:
-            pts_path = get_points_path(year, aoi_code)
-            if pts_path.exists():
-                # ddfs.append(dgpd.read_parquet(pts_path))
-                ddfs.append(dd.read_parquet(pts_path))
-        ddf = dd.concat(ddfs)
-        # ddf.spatial_partitons = None
-        ddf.to_parquet(get_points_combined_path(years, aoi_code))
-
-
-def main(args):
-    years = list(range(args.min_year, args.max_year + 1))
-    aoi = args.aoi
-    crs = rts.Raster(args.crs_file).crs
-    num_workers = args.num_workers
+def main(min_year, max_year, aoi):
+    years = list(range(min_year, max_year + 1))
+    aoi = aoi
+    crs = DEFAULT_CRS
     save_raster_to_points(years, aoi, crs)
-    print("\n****\n")
-    combine_years(years, aoi, num_workers)
-    print("\n****\n")
+
+
+DESC = """
+Convert MTBS rasters to dataframes and combine them with various datasets.
+
+This script produces a separate parquet output for each year. These can then be
+concatenated together later.
+"""
+
+
+def _get_parser():
+    p = argparse.ArgumentParser(description=DESC)
+    p.add_argument(
+        "--min_year",
+        default=1984,
+        type=int,
+        help="Minnimum year to pull data from",
+    )
+    p.add_argument(
+        "--max_year",
+        default=2022,
+        type=int,
+        help="Maximum year to pull data from",
+    )
+    p.add_argument(
+        "aoi",
+        type=str,
+        help="The area of interest (AOI) code to pull points from",
+    )
+    return p
 
 
 if __name__ == "__main__":
     args = _get_parser().parse_args()
     assert args.min_year <= args.max_year
-    assert args.num_workers > 0
-    main(args)
+    main(args.min_year, args.max_year, args.aoi)

@@ -24,3 +24,43 @@ WUI_DIR = MTBS_ROOT / "wui"
 RAW_WUI = WUI_DIR / "raw" / "CONUS_WUI_block_1990_2020_change_v4.gdb"
 INTERMEDIATE_WUI = WUI_DIR / "intermediate" / "wui.gpkg"
 WUI_PATH = WUI_DIR / "cleaned"
+
+
+# --- Formats ---
+MTBS_TIF_FMT = "mtbs_{aoi}_{year}.tif"
+NLCD_TIF_FMT = "Annual_NLCD_LndCov_{year}_CU_C1V0.tif"
+TMP_PTS_FMT = "mtbs_{aoi}_{year}"
+COMBINED_OUT_FMT = "mtbs_{aoi}_{min_year}_{max_year}"
+
+
+# --- Path Builders ---
+def get_points_path(year, aoi_code):
+    return ROOT_TMP_DIR / TMP_PTS_FMT.format(aoi=aoi_code, year=year)
+
+
+def get_mtbs_raster_path(year, aoi_code):
+    return CLEANED_RASTER_DATA_DIR / MTBS_TIF_FMT.format(
+        aoi=aoi_code, year=year
+    )
+
+
+def get_nlcd_raster_path(year):
+    return NLCD_PATH / NLCD_TIF_FMT.format(year=year)
+
+
+def get_wui_flavor_path(year, flavor):
+    if year < 2000:
+        y = 1990
+    elif 2000 <= year < 2010:
+        y = 2000
+    elif 2010 <= year < 2020:
+        y = 2010
+    else:
+        y = 2020
+    return WUI_PATH / f"wui_{flavor}_{y}.tif"
+
+
+def get_points_combined_path(years, aoi_code):
+    return RESULTS_DIR / COMBINED_OUT_FMT.format(
+        aoi=aoi_code, min_year=min(years), max_year=max(years)
+    )
