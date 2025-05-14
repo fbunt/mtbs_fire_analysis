@@ -74,7 +74,6 @@ select = [
     "B",      # flake8-bugbear
     "A",      # flake8-builtins
     "ISC",    # flake8-implicit-str-concat
-    "T20",    # flake8-print
     "F",      # Pyflakes
     "I",      # isort
     "NPY",    # numpy rules
