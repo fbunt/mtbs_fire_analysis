@@ -13,6 +13,8 @@
   "mounts": [
   "source=${localEnv:FASTDATA_PATH},target=/fastdata,type=bind,consistency=cached,readonly=false"
   ],
+  "postCreateCommand": "uv sync",              // creates/updates .venv
+  "postStartCommand":  "uv sync --quiet",      // cheap no-op on second run
 
   "customizations": {
     "vscode": {
@@ -21,7 +23,7 @@
         // Interactive Window settings
         "python.dataScience.sendSelectionToInteractiveWindow": true, // Send highlighted code straight to the Interactive Window
         "jupyter.interactiveWindow.mode": "perFile", // Always open a fresh Interactive Window per file (handy for scripts)
-        "python.defaultInterpreterPath": "/workspaces/mtbs_fire_analysis/.venv/bin/python3.12", // Default Python interpreter path
+        "python.defaultInterpreterPath": "/workspaces/mtbs_fire_analysis/.venv/bin/python", // Default Python interpreter path
         
         // Setup Bash
         "terminal.integrated.defaultProfile.linux": "bash", // Default terminal
@@ -34,7 +36,8 @@
         // VSCode extensions
         // Python and Jupyter extensions
         "ms-python.python",      // Core Python support
-        "ms-toolsai.jupyter"     // Interactive Window / Notebooks
+        "ms-toolsai.jupyter",     // Interactive Window / Notebooks
+        "charliermarsh.ruff"
       ]
     }
   }
