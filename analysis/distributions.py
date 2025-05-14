@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.stats import gamma, lognorm, norm, weibull_min
 from scipy.optimize import minimize
+from scipy.stats import weibull_min
 
 
 def fit_dist(data, nll_func, survival_data=None, initial_params=None):
@@ -28,9 +28,13 @@ def fit_dist(data, nll_func, survival_data=None, initial_params=None):
         initial_params = (1.0, 1.0)
 
     # Minimize the negative log likelihood
-    result = minimize(nll_func, initial_params,
-                      args=(data, survival_data), method='L-BFGS-B',
-                      bounds=((1e-5, None), (1e-5, None)))
+    result = minimize(
+        nll_func,
+        initial_params,
+        args=(data, survival_data),
+        method="L-BFGS-B",
+        bounds=((1e-5, None), (1e-5, None)),
+    )
 
     if result.success:
         return result.x
@@ -38,8 +42,6 @@ def fit_dist(data, nll_func, survival_data=None, initial_params=None):
         raise RuntimeError("Parameter fitting failed.")
 
 
-
-# Weibull distribution class, implements the PDF and CDF, and the log likelihood as above. Change all functions to take only named parameters, so wrap the scipy functions to achieve this. Fit function that updates the parameters.
 class WeibullDistribution:
     """
     Weibull distribution class.
@@ -61,7 +63,7 @@ class WeibullDistribution:
 
     def cdf(self, x):
         return weibull_min.cdf(x, self.shape, scale=self.scale)
-    
+
     def gen_neg_log_likelihood(self, params, data, survival_data=None):
         """
         Compute the log likelihood of the Weibull distribution given the data,
@@ -89,11 +91,11 @@ class WeibullDistribution:
 
         # Add log likelihood for survival data if provided
         if survival_data is not None:
-            log_likelihood += np.sum(weibull_min.logsf(survival_data, shape, scale=scale))
+            log_likelihood += np.sum(
+                weibull_min.logsf(survival_data, shape, scale=scale)
+            )
 
         return -log_likelihood
-        #return weibull_log_likelihood((self.shape, self.scale), data, survival_data)
-    
 
     def neg_log_likelihood(self, data, survival_data=None):
         """
@@ -113,11 +115,14 @@ class WeibullDistribution:
         float
             Log likelihood value.
         """
-        return self.gen_neg_log_likelihood((self.shape, self.scale), data, survival_data)
-    
+        return self.gen_neg_log_likelihood(
+            (self.shape, self.scale), data, survival_data
+        )
+
     def fit(self, data, survival_data=None):
         """
-        Fit the Weibull distribution to the data using maximum likelihood estimation.
+        Fit the Weibull distribution to the data using
+        maximum likelihood estimation.
 
         Parameters
         ----------
@@ -133,12 +138,13 @@ class WeibullDistribution:
             Fitted parameters (shape, scale).
         """
         # Fit the Weibull distribution to the data
-        params = fit_dist(data, self.gen_neg_log_likelihood, survival_data, initial_params=(self.shape, self.scale))
+        params = fit_dist(
+            data,
+            self.gen_neg_log_likelihood,
+            survival_data,
+            initial_params=(self.shape, self.scale),
+        )
         self.shape, self.scale = params
-
-
-
-
 
 
 def plot_fit(samples, dist_obj, output_name, bins=60, title=None):
@@ -170,10 +176,18 @@ def plot_fit(samples, dist_obj, output_name, bins=60, title=None):
         fig.suptitle(title, fontsize=14, y=1.02)
 
     # -------- PDF panel -----------------------------------------------------
-    axs[0].hist(samples, bins=bins, density=True,
-                color="lightgrey", edgecolor="k", alpha=0.7, label="sample")
-    axs[0].plot(x_plot, dist_obj.pdf(x_plot), lw=2, color="crimson",
-                label="fitted PDF")
+    axs[0].hist(
+        samples,
+        bins=bins,
+        density=True,
+        color="lightgrey",
+        edgecolor="k",
+        alpha=0.7,
+        label="sample",
+    )
+    axs[0].plot(
+        x_plot, dist_obj.pdf(x_plot), lw=2, color="crimson", label="fitted PDF"
+    )
     axs[0].set_xlabel("t")
     axs[0].set_ylabel("density")
     axs[0].set_title("Histogram vs fitted PDF")
@@ -182,10 +196,12 @@ def plot_fit(samples, dist_obj, output_name, bins=60, title=None):
     # -------- CDF panel -----------------------------------------------------
     sorted_x = np.sort(samples)
     ecdf = np.arange(1, len(sorted_x) + 1) / len(sorted_x)
-    axs[1].step(sorted_x, ecdf, where="post",
-                color="black", label="empirical CDF")
-    axs[1].plot(x_plot, dist_obj.cdf(x_plot),
-                lw=2, color="crimson", label="fitted CDF")
+    axs[1].step(
+        sorted_x, ecdf, where="post", color="black", label="empirical CDF"
+    )
+    axs[1].plot(
+        x_plot, dist_obj.cdf(x_plot), lw=2, color="crimson", label="fitted CDF"
+    )
     axs[1].set_xlabel("t")
     axs[1].set_ylabel("probability")
     axs[1].set_title("ECDF vs fitted CDF")
