@@ -1,3 +1,41 @@
+[project]
+name            = "mtbs_fire_analysis"
+version         = "0.0.1"
+requires-python = "==3.12.*"
+
+dependencies = [
+  "affine",
+  "cfgrib",
+  "dask",
+  "dask-geopandas",
+  "dask-image",
+  "fiona",
+  "geopandas",
+  "ipython",
+  "ipykernel",
+  "matplotlib",
+  "netcdf4",
+  "numba",
+  "numpy",
+  "odc-geo",
+  "pandas",
+  "polars",
+  "pre-commit",
+  "pyarrow",
+  "pynvim",
+  "pyogrio",
+  "pyproj",
+  "rasterio",
+  "rioxarray",
+  "ruff",
+  "scipy",
+  "seaborn",
+  "shapely>=2",
+  "tqdm",
+  "xarray",
+]
+
+
 [tool.black]
 line-length = 79
 
