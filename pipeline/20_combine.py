@@ -1,4 +1,5 @@
 import argparse
+from pathlib import Path
 
 import dask
 import dask.dataframe as dd
@@ -23,7 +24,7 @@ def combine_years(years, aoi_code, num_workers):
         return
     with (
         LocalCluster(n_workers=num_workers) as cluster,
-        Client(cluster) as client,
+        Client(cluster) as _,
     ):
         ddfs = []
         for year in years:
@@ -32,6 +33,12 @@ def combine_years(years, aoi_code, num_workers):
                 ddfs.append(dd.read_parquet(pts_path))
         ddf = dd.concat(ddfs)
         ddf.to_parquet(get_points_combined_path(years, aoi_code))
+
+
+def _path(path):
+    path = Path(path)
+    assert path.exists()
+    return path
 
 
 DESC = """Combine dataframes to form a large dataframe of burn records."""
@@ -49,21 +56,23 @@ def _get_parser():
             "Default is 5."
         ),
     )
-    p.add_argument(
-        "--min_year",
-        default=1984,
-        type=int,
-        help="Minnimum year to pull data from",
-    )
-    p.add_argument(
-        "--max_year",
-        default=2022,
-        type=int,
-        help="Maximum year to pull data from",
-    )
-    p.add_argument(
-        "aoi",
-        type=str,
-        help="The area of interest (AOI) code to pull points from",
-    )
+    p.add_argument("files", type=_path, nargs="+", help="Files to combine")
+    p.add_argument("out_path", type=Path, help="Output path")
     return p
+
+
+def main(files, out_path, num_workers):
+    assert not out_path.exists()
+
+    with (
+        LocalCluster(n_workers=num_workers) as cluster,
+        Client(cluster) as _,
+    ):
+        ddfs = [dd.read_parquet(path) for path in files]
+        ddf = dd.concat(ddfs)
+        ddf.to_parquet(out_path)
+
+
+if __name__ == "__main__":
+    args = _get_parser().parse_args()
+    main(args.files, args.out_path, args.num_workers)
