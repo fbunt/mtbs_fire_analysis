@@ -15,26 +15,6 @@ dask.config.set(
 )
 
 
-def combine_years(years, aoi_code, num_workers):
-    out_path = get_points_combined_path(years, aoi_code)
-    if out_path.exists():
-        print(
-            f"Combined dataframe path '{out_path}' already present. Skipping."
-        )
-        return
-    with (
-        LocalCluster(n_workers=num_workers) as cluster,
-        Client(cluster) as _,
-    ):
-        ddfs = []
-        for year in years:
-            pts_path = get_points_path(year, aoi_code)
-            if pts_path.exists():
-                ddfs.append(dd.read_parquet(pts_path))
-        ddf = dd.concat(ddfs)
-        ddf.to_parquet(get_points_combined_path(years, aoi_code))
-
-
 def _path(path):
     path = Path(path)
     assert path.exists()
