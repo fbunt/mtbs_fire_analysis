@@ -125,7 +125,7 @@ def _get_parser():
 
 if __name__ == "__main__":
     args = _get_parser().parse_args()
-    lf = pl.scan_parquet(args.data_loc)
+    lf = pl.scan_parquet(args.data_loc).rename({"eco_lvl_1": "eco"})
     ldts = build_dts_df(lf)
     dts = ldts.collect()
     make_basic_bar_plots(dts, sns_hist_stacked)
