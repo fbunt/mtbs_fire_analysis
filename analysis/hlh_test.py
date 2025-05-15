@@ -39,6 +39,8 @@ while any(remaining):
     # Find remaining pixels
     remaining = remaining_times > 0.0
 
+dts = np.array(dts)
+
 # Counts of dts and last_times
 num_dts = len(dts)
 num_last_times = len(last_times)
