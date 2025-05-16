@@ -196,6 +196,11 @@ class HalfLifeHazardDistribution:
         """Return the parameters of the distribution as dictionary."""
         return {"hazard_inf": self.hazard_inf, "half_life": self.half_life}
 
+    @property
+    def dist_type(self):
+        """Return the distribution type."""
+        return "HalfLifeHazard"
+
     # ---------- derived attributes ----------------------------------------
     @property
     def half_life(self) -> float:
@@ -302,6 +307,9 @@ class HalfLifeHazardDistribution:
             args=(data, cens),
             method="L-BFGS-B",
             bounds=bounds,
+            options={"maxiter"}
+            maxiter=100000,
+            maxfun=100000,
         )
 
         if not res.success:
@@ -323,6 +331,30 @@ class HalfLifeHazardDistribution:
         c = 1.0 + self.lam * y
         z = c + lambertw(-np.exp(-c), k=0).real  # principal branch
         return z / self.lam
+
+
+def deficit(fit, data, ref: float = 0.0):
+    """
+    Compute the deficit of the fitted distribution.
+
+    Parameters
+    ----------
+    fit : object
+        Fitted distribution object.
+    data : 1‑D array‑like
+        Observed data.
+    ref : float, optional
+        Reference value for the deficit calculation.
+
+    Returns
+    -------
+    float
+        Deficit value.
+    """
+    ref_hazard = fit.hazard(ref)
+    hazard = fit.hazard(data)
+    return hazard - ref_hazard
+
 
 
 def plot_fit(samples, dist_obj, output_name, bins=60, title=None):
