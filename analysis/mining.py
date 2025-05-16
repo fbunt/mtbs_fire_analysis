@@ -59,3 +59,37 @@ def build_dts_df(lf, extra_cols=None):
         .explode("dt", *flatmap(_extra_names, extra_cols))
         .drop_nulls()
     )
+
+def build_survival_times(lf, extra_cols=None):
+    """Build a dataframe of survival times. This is the time from the last fire
+    per pixel to the most recent fire in the entire dataset. This is used to fit
+    the hazard function to the data.
+
+    Parameters
+    ----------
+    lf : polars.LazyFrame, polars.DataFrame
+        The dataframe to process.
+    extra_cols : list, optional
+        The extra columns to get the values for the last fire per pixel.
+
+    Returns
+    -------
+    polars.LazyFrame, polars.DataFrame
+
+    """
+
+    max_time = lf.select(pl.col("Ig_Date").max()).collect().item()
+
+    extra_cols = extra_cols or []
+    assert "bs" not in extra_cols
+    extra_cols = ["bs"] + extra_cols
+    return (
+        lf.group_by("geohash")
+        .agg(
+            pl.len().alias("n"),
+            pl.col("eco_lvl_1").last().alias("eco"),
+            (max_time - pl.col("Ig_Date").last()).dt.total_days().alias("survival_time") /365 ,
+            pl.col(*extra_cols).last(),
+        )
+        .drop_nulls()
+    )
