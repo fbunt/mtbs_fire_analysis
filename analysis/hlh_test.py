@@ -4,8 +4,8 @@ import distributions as cd
 import numpy as np
 from distributions import HalfLifeHazardDistribution as HLHD
 
-num_pixels = 10000
-time_interval = 40
+num_pixels = 100_000
+time_interval = 38
 
 # Count total time taken
 remaining_times = time_interval * np.ones(num_pixels)
@@ -14,8 +14,8 @@ expand_samples = np.zeros(num_pixels)
 
 dts = []
 
-halflife=3
-hazard_inf = 0.2
+halflife = 13
+hazard_inf = 0.09
 
 truth = HLHD(hazard_inf=hazard_inf, half_life=halflife)
 
@@ -60,6 +60,9 @@ fitter = HLHD(hazard_inf=hazard_inf, half_life=halflife)
 fitter.fit(dts)
 fitter_censor = HLHD(hazard_inf=hazard_inf, half_life=halflife)
 fitter_censor.fit(dts, last_times)
+fitter_censor_discard = HLHD(hazard_inf=hazard_inf, half_life=halflife)
+fitter_censor_discard.fit(dts, last_times[last_times<37.5])
+
 
 # Print the original params, first params, then censor params
 print("Original params: ")
@@ -68,6 +71,8 @@ print("Fitted parameters without censoring: ")
 print(fitter.params)
 print("Fitted parameters with censoring: ")
 print(fitter_censor.params)
+print("Fitted parameters with censoring (discard): ")
+print(fitter_censor_discard.params)
 
 print("Neg Log likelihood values ignoring censoring: ")
 print("Original params: ")
@@ -76,6 +81,8 @@ print("Fitted parameters without censoring: ")
 print(fitter.neg_log_likelihood(dts))
 print("Fitted parameters with censoring: ")
 print(fitter_censor.neg_log_likelihood(dts, last_times))
+print("Fitted parameters with censoring (discard): ")
+print(fitter_censor_discard.neg_log_likelihood(dts, last_times[last_times<35]))
 
 print("Neg log likelihood values with censoring: ")
 print("Original params: ")
@@ -84,10 +91,12 @@ print("Fitted parameters without censoring: ")
 print(fitter.neg_log_likelihood(dts, last_times))
 print("Fitted parameters with censoring: ")
 print(fitter_censor.neg_log_likelihood(dts, last_times))
+print("Fitted parameters with censoring (discard): ")
+print(fitter_censor_discard.neg_log_likelihood(dts, last_times[last_times<35]))
 
+out_dir = Path("Outputs")
 
-out_dir = Path("analysis/Outputs")
-
-cd.plot_fit(dts, fitter, out_dir / "HLHDFitNoCensor.png")
-cd.plot_fit(dts, fitter_censor, out_dir / "HLHDFitCensor.png")
-cd.plot_fit(dts, truth, out_dir / "HLHDFitActual.png")
+cd.plot_fit(fitter, dts, last_times, out_dir / "HLHDFitNoCensorAnalytic.png")
+cd.plot_fit(fitter_censor, dts, last_times, out_dir / "HLHDFitCensorAnalytic.png")
+cd.plot_fit(truth, dts, last_times, out_dir / "HLHDFitActualAnalytic.png")
+cd.plot_fit(fitter_censor_discard, dts, last_times, out_dir / "HLHDFitCensorDiscardAnalytic.png")
