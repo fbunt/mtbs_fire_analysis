@@ -1,0 +1,12 @@
+These tests do a combination of:
+- Simulate data in a similar way to how our data is sourced
+ - Ie. treating the samples as coming from pixels and simulating our observation window
+ - We can apply filters/adjustments that are present in our data
+  - Left/Right censoring data
+  - Filter out pixels that have no events
+- Checking if the distribution objects are self consistent
+ - Can we fit to the output data and recover our initial parameters
+ - Does the distribution of the generated data match the pdf function
+
+
+Mostly the above are checked by manual inspection of the plots and the fitted parameters
