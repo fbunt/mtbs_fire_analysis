@@ -1,10 +1,12 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.optimize import minimize
+from scipy.optimize import minimize, approx_fprime
 from scipy.special import lambertw
 from scipy.stats import weibull_min
+from matplotlib.offsetbox import AnchoredText
 
 LN2 = np.log(2.0)
+_EPS = 1e-12          # numeric safety for logs/divisions
 
 def fit_dist(data, nll_func, survival_data=None, initial_params=None):
     """
@@ -177,43 +179,36 @@ class WeibullDistribution:
 class HalfLifeHazardDistribution:
     """
     Hazard grows from 0 toward h_inf with an exponential half-life approach.
-
-    Parameters
-    ----------
-    hazard_inf : float   ( > 0 )
-        Limit h(t→∞).
-    half_life  : float   ( > 0 )
-        Time at which the gap h_inf − h(t) has halved.
     """
 
-    # ----- construction ----------------------------------------------------
+    # ---------- construction ---------------------------------------------
     def __init__(self, hazard_inf: float = 0.1, half_life: float = 10.0):
         if hazard_inf <= 0 or half_life <= 0:
             raise ValueError("hazard_inf and half_life must be positive.")
         self.hazard_inf = float(hazard_inf)
-        self.lam = LN2 / float(half_life)           # λ = ln 2 / τ½
+        self.lam        = LN2 / float(half_life)          # λ = ln 2 / τ½
 
-    # ----- handy read-outs -------------------------------------------------
+    # ---------- handy read-outs ------------------------------------------
     @property
-    def half_life(self) -> float:                   # τ½  (derived)
-        return LN2 / self.lam
-
-    @property
-    def dist_type(self):
-        """Return the distribution type."""
+    def dist_type(self) -> str:
+        """Short name used by plotting / reporting helpers."""
         return "HalfLifeHazard"
+
+    @property
+    def half_life(self) -> float:
+        return LN2 / self.lam
 
     @property
     def params(self):
         return {"hazard_inf": self.hazard_inf, "half_life": self.half_life}
 
-    # ----- core functions --------------------------------------------------
+    # ---------- core maths -----------------------------------------------
     def hazard(self, t):
-        t = np.asarray(t, dtype=float)
-        return self.hazard_inf * (-np.expm1(-self.lam * t))      # 1-e^{−λt}
+        t = np.asarray(t, float)
+        return self.hazard_inf * (-np.expm1(-self.lam * t))       # 1-e^{−λt}
 
     def cum_hazard(self, t):
-        t = np.asarray(t, dtype=float)
+        t = np.asarray(t, float)
         e = np.exp(-self.lam * t)
         return self.hazard_inf * (t - (1.0 - e) / self.lam)
 
@@ -226,157 +221,140 @@ class HalfLifeHazardDistribution:
     def cdf(self, t):
         return 1.0 - self.survival(t)
 
-    # ---------------------------------------------------------------------
-    #   Negative log-likelihood  **and**  its analytic gradient
-    # ---------------------------------------------------------------------
+    # -------------------------------------------------------------------
+    #  NLL + gradient in ORIGINAL params  p = (h_inf , tau)
+    # -------------------------------------------------------------------
     @staticmethod
-    def _nll_and_grad(params, data, cens):
-        """
-        Returns (nll, grad) for the given parameters.
-
-        Parameters
-        ----------
-        params : (h_inf, half_life)
-        data   : failure times  (1-D ndarray)
-        cens   : right-censored times or None
-        """
+    def _nll_and_grad_orig(params, data, cens):
         h_inf, tau = params
         if h_inf <= 0 or tau <= 0:
-            # Outside the domain → infinite objective, zero gradient (harmless).
             return np.inf, np.array([0.0, 0.0])
 
         lam = LN2 / tau
-        # --- helpers that we need several times --------------------------------
-        def A(x):                                      #   t − (1−e^{−λt})/λ
-            e = np.exp(-lam * x)
-            return x - (1.0 - e) / lam
+        t_fail = np.maximum(data, _EPS)                # guard log(0)
 
-        t_fail = data
-        t_all  = t_fail if cens is None else np.concatenate([t_fail, cens])
+        # helper A(t) = t − (1−e^{−λt})/λ
+        e_fail  = np.exp(-lam * t_fail)
+        A_fail  = t_fail - (1.0 - e_fail) / lam
 
-        # *NLL* -----------------------------------------------------------------
-        g_fail = -np.expm1(-lam * t_fail)              # 1 − e^{−λt}
-        nll  = -len(t_fail) * np.log(h_inf)            # −Σ log h_inf
-        nll -= np.sum(np.log(g_fail))                  # −Σ log g(t)
-        nll += h_inf * np.sum(A(t_all))                # +Σ H(t)
+        if cens is not None and len(cens):
+            t_cens = np.maximum(cens, _EPS)
+            e_cens = np.exp(-lam * t_cens)
+            A_cens = t_cens - (1.0 - e_cens) / lam
+            A_all  = np.concatenate([A_fail, A_cens])
+        else:
+            A_all = A_fail
 
-        # *Gradient wrt h_inf* ---------------------------------------------------
-        grad_h = -len(t_fail) / h_inf + np.sum(A(t_all))
+        g_fail   = 1.0 - e_fail                       # 1−e^{−λt}
 
-        # *Gradient wrt tau* -----------------------------------------------------
-        # pieces for ∂/∂λ
-        e_fail = np.exp(-lam * t_fail)
-        dg_dlam_fail = t_fail * e_fail                 # d/dλ  (1−e^{−λt})
-        term1 = -np.sum(dg_dlam_fail / g_fail)         # from −Σ log g(t)
+        # ---------- NLL ---------------------------------------------------
+        nll  = -len(t_fail) * np.log(h_inf)
+        nll -= np.sum(np.log(np.maximum(g_fail, _EPS)))
+        nll += h_inf * np.sum(A_all)
 
-        e_all = np.exp(-lam * t_all)
-        dA_dlam_all = ((1.0 - e_all) - t_all * e_all * lam) / lam**2
-        term2 = h_inf * np.sum(dA_dlam_all)            # from Σ H(t)
+        # ---------- gradient wrt h_inf -----------------------------------
+        grad_h = -len(t_fail) / h_inf + np.sum(A_all)
 
-        dlam_dtau = -lam / tau                         # λ = ln2 / τ
+        # ---------- gradient wrt tau -------------------------------------
+        dg_dlam_fail  = t_fail * e_fail
+        term1 = -np.sum(dg_dlam_fail / np.maximum(g_fail, _EPS))
 
-        grad_tau = (term1 + term2) * dlam_dtau
-        grad = np.array([grad_h, grad_tau])
+        # dA/dλ
+        e_all = np.exp(-lam * np.maximum(np.concatenate([t_fail, cens]) if cens is not None else t_fail, _EPS))
+        x_all = np.concatenate([t_fail, cens]) if cens is not None else t_fail
+        dA_dlam_all = ((1.0 - e_all) - x_all * e_all * lam) / (lam**2)
+        term2 = h_inf * np.sum(dA_dlam_all)
 
-        return nll, grad
+        grad_tau = (term1 + term2) * (-lam / tau)      # chain rule λ→τ
+        return nll, np.array([grad_h, grad_tau])
 
+    # -------------------------------------------------------------------
+    #  NLL + gradient in LOG params  θ = (log h_inf , log τ)
+    # -------------------------------------------------------------------
+    @classmethod
+    def _nll_and_grad_log(cls, theta, data, cens):
+        h_inf, tau = np.exp(theta)
+        nll, g_orig = cls._nll_and_grad_orig((h_inf, tau), data, cens)
+        grad_log = g_orig * np.array([h_inf, tau])     # ∂p/∂θ = p
+        return nll, grad_log
+
+    # -------------------------------------------------------------------
+    #  Public NLL helper (original scale)
+    # -------------------------------------------------------------------
     def neg_log_likelihood(self, data, cens=None):
+        return self._nll_and_grad_orig(
+            (self.hazard_inf, self.half_life), data, cens
+        )[0]
+
+    # -------------------------------------------------------------------
+    #  Gradient consistency check (finite diff vs analytic)
+    # -------------------------------------------------------------------
+    @classmethod
+    def _check_grad_consistency(cls, theta0, data, cens, tol=1e-4):
         """
-        Compute the negative log likelihood of the data given the parameters.
-
-        Parameters
-        ----------
-        data : 1‑D array‑like
-            Observed data.
-        cens : 1‑D array‑like or None
-            Optional right-censored data. If provided, the log likelihood is
-            computed using both the observed and censored data.
-
-        Returns
-        -------
-        float
-            Negative log likelihood value.
+        Return True if analytic and finite-difference grads agree at theta0.
         """
-        return self._nll_and_grad((self.hazard_inf, self.half_life), data, cens)[0]
+        nll, g_analytic = cls._nll_and_grad_log(theta0, data, cens)
 
-    # ---------------------------------------------------------------------
-    #   Maximum-likelihood fit
-    # ---------------------------------------------------------------------
+        def _obj(t):  # wrapper for approx_fprime
+            return cls._nll_and_grad_log(t, data, cens)[0]
+
+        g_fd = approx_fprime(theta0, _obj, np.sqrt(np.finfo(float).eps))
+        ok = np.allclose(g_analytic, g_fd, rtol=tol, atol=tol)
+        if not ok:
+            print("\n[HalfLifeHazard] WARNING: analytic gradient mismatch "
+                  f"(max diff {np.max(np.abs(g_analytic - g_fd)):.2e}). "
+                  "Falling back to gradient-free optimisation.")
+        return ok
+
+    # -------------------------------------------------------------------
+    #  Maximum-likelihood fit (robust)
+    # -------------------------------------------------------------------
     def fit(self, data, survival_data=None, verbose=False):
-        """
-        Fit the parameters by maximising the likelihood (L-BFGS-B with Jacobian).
-
-        Raises RuntimeError if the optimiser fails.
-        """
-        data = np.asarray(data, dtype=float)
+        data = np.asarray(data, float)
         cens = None if survival_data is None else np.asarray(survival_data, float)
 
-        def _obj(p, d, c):
-            nll, _ = self._nll_and_grad(p, d, c)
-            return nll
+        theta0 = np.log([self.hazard_inf, self.half_life])
+        log_bounds = ((np.log(1e-12), np.log(4.0)),
+                      (np.log(1e-12), np.log(1000.0)))
 
-        def _jac(p, d, c):
-            _, g = self._nll_and_grad(p, d, c)
-            return g
+        use_grad = self._check_grad_consistency(theta0, data, cens)
 
-        bounds = ((1e-12, 0.5), (1e-12, 100))
-        init   = (self.hazard_inf, self.half_life)
+        def _obj(theta, d, c):
+            return self._nll_and_grad_log(theta, d, c)[0]
+
+        if use_grad:
+            def _jac(theta, d, c):
+                return self._nll_and_grad_log(theta, d, c)[1]
+        else:
+            _jac = None
 
         res = minimize(
-            fun   = _obj,
-            x0    = init,
-            args  = (data, cens),
-            method= "L-BFGS-B",
-            jac   = _jac,
-            bounds= bounds,
-            options={"disp": verbose},
+            fun     = _obj,
+            x0      = theta0,
+            args    = (data, cens),
+            jac     = _jac,
+            method  = "L-BFGS-B",
+            bounds  = log_bounds,
+            options = {"disp": verbose, "maxls": 40},
         )
 
         if not res.success:
-            raise RuntimeError(
-                f"Parameter fitting failed: {res.message} (status {res.status})"
-            )
+            raise RuntimeError(f"Parameter fitting failed: {res.message}")
 
-        self.hazard_inf, tau_hat = res.x
+        self.hazard_inf, tau_hat = np.exp(res.x)
         self.lam = LN2 / tau_hat
         return {"hazard_inf": self.hazard_inf, "half_life": tau_hat}
 
-    # ---------------------------------------------------------------------
-    #   Quick diagnostics when optimise() returns “ABNORMAL”
-    # ---------------------------------------------------------------------
-    @staticmethod
-    def diagnose_fit(data, cens=None, init=(0.1, 10.0), grid=8):
-        """
-        Print a coarse NLL landscape around the initial guess to detect
-        multi-modality / flat regions / numeric blow-ups.
-        """
-        data = np.asarray(data, float)
-        cens = None if cens is None else np.asarray(cens, float)
-
-        h0, t0 = init
-        h_vals = np.logspace(np.log10(h0) - 1, np.log10(h0) + 1, grid)
-        t_vals = np.logspace(np.log10(t0) - 1, np.log10(t0) + 1, grid)
-        Z = np.empty((grid, grid))
-        for i, h in enumerate(h_vals):
-            for j, tau in enumerate(t_vals):
-                Z[i, j], _ = HalfLifeHazardDistribution._nll_and_grad(
-                    (h, tau), data, cens
-                )
-        print("\nCoarse NLL heat-map (rows = hazard_inf, cols = half_life):")
-        with np.printoptions(precision=1, suppress=True):
-            print(Z)
-
-    # ---------------------------------------------------------------------
-    #   Random variate generator
-    # ---------------------------------------------------------------------
+    # -------------------------------------------------------------------
+    #  Random variate generator (unchanged)
+    # -------------------------------------------------------------------
     def rvs(self, size=1, rng=None):
-        """Inverse-transform sampling using the closed-form Lambert-W."""
         rng = np.random.default_rng() if rng is None else rng
         u   = rng.random(size)
-
-        y = -np.log1p(-u) / self.hazard_inf
-        c = 1.0 + self.lam * y
-        z = c + lambertw(-np.exp(-c), k=0).real
+        y   = -np.log1p(-u) / self.hazard_inf
+        c   = 1.0 + self.lam * y
+        z   = c + lambertw(-np.exp(-c), k=0).real
         return z / self.lam
 
 
@@ -436,7 +414,7 @@ def plot_fit(dist_obj, samples, cens=None,
     max_x = int(np.ceil(samples.max()))
     x_plot = np.linspace(min_x, max_x, 500)
     bins = np.arange(min_x, max_x + 1, 1)
-    
+
     # --- figure set‑up ------------------------------------------------------
     num_plots = 2 + (1 if cens is not None else 0)
     fig, axs = plt.subplots(1, num_plots, figsize=(10, 4))
@@ -454,9 +432,8 @@ def plot_fit(dist_obj, samples, cens=None,
         label="sample",
     )
     axs[0].plot(
-        x_plot, dist_obj.pdf(x_plot), lw=2, color="crimson", label="fitted PDF"
+        x_plot, dist_obj.pdf(x_plot), lw=2, color="crimson", label="fit PDF"
     )
-    axs[0].set_xlabel("t")
     axs[0].set_ylabel("density")
     axs[0].set_title("Histogram vs fitted PDF")
     axs[0].legend()
@@ -465,12 +442,11 @@ def plot_fit(dist_obj, samples, cens=None,
     sorted_x = np.sort(samples)
     ecdf = np.arange(1, len(sorted_x) + 1) / len(sorted_x)
     axs[1].step(
-        sorted_x, ecdf, where="post", color="black", label="empirical CDF"
+        sorted_x, ecdf, where="post", color="black", label="sample CDF"
     )
     axs[1].plot(
-        x_plot, dist_obj.cdf(x_plot), lw=2, color="crimson", label="fitted CDF"
+        x_plot, dist_obj.cdf(x_plot), lw=2, color="crimson", label="fit CDF"
     )
-    axs[1].set_xlabel("t")
     axs[1].set_ylabel("probability")
     axs[1].set_title("ECDF vs fitted CDF")
     axs[1].legend()
@@ -484,17 +460,35 @@ def plot_fit(dist_obj, samples, cens=None,
             color="lightgrey",
             edgecolor="k",
             alpha=0.7,
-            label="sample",
+            label="last survival",
         )
-        axs[2].plot(
-            x_plot, dist_obj.survival(x_plot), lw=2, color="crimson",
-            label="fitted survival"
-        )
-        axs[2].set_xlabel("t")
         axs[2].set_ylabel("density")
-        axs[2].set_title("Histogram vs fitted survival")
-        axs[2].legend()
+        ax2 = axs[2].twinx()
 
+        ax2.plot(
+            x_plot, dist_obj.survival(x_plot), lw=2, color="crimson",
+            label="fit survival"
+        )
+
+        # Combine legends from both axes
+        lines, labels = axs[2].get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax2.legend(lines + lines2, labels + labels2, loc="upper center")
+        ax2.set_ylabel("survival probability", color="crimson")
+        axs[2].set_title("Histogram vs fitted survival")
+
+    fig.supxlabel("Years since last fire")
+
+    # Add a legend for the parameters
+
+    labels = [f"{k}: {v}" for k, v in dist_obj.params.items()]
+    extra = fig.legend(
+    handles=[plt.Line2D([], [], lw=0)]*len(labels),  # dummy handles
+    labels=labels,
+    loc="upper center",  bbox_to_anchor=(0.5, 0.0),
+    frameon=True, title="Parameter values",
+    ncol=3, handlelength=0
+    )
     plt.tight_layout()
-    plt.savefig(output_name)
+    plt.savefig(output_name,bbox_extra_artists=[extra], bbox_inches='tight')
     plt.close(fig)
