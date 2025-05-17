@@ -61,7 +61,8 @@ fitter = cd.WeibullDistribution(1.0, 1.0)
 fitter.fit(dts)
 # Fit Weibull distribution to the samples
 print(
-    f"Fitted Weibull parameters: shape = {fitter.shape}, scale = {fitter.scale}"
+    f"Fitted Weibull parameters: shape = {fitter.shape}, "
+    f"scale = {fitter.scale}"
 )
 
 print(

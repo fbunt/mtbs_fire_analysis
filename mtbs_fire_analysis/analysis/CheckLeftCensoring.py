@@ -34,7 +34,7 @@ th.evaluate_fits(
     lc_dts,
     lc_sts,
     [truth, nlc_fitter, lc_fitter],
-    names=["Truth","No Left Censoring", "Left Censoring"],
+    names=["Truth", "No Left Censoring", "Left Censoring"],
 )
 th.output_plots(
     lc_dts,

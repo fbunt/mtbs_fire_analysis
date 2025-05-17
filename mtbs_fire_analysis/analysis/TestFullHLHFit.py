@@ -15,9 +15,7 @@ from mtbs_fire_analysis.analysis.mining import (
 refresh_dts = False
 refresh_sts = True
 
-cache_path = (
-    Path("/fastdata") / "FredData" /  "cache"
-)
+cache_path = Path("/fastdata") / "FredData" / "cache"
 
 if refresh_dts or refresh_sts:
     data_path = Path("/fastdata") / "FredData" / "mtbs_CONUS_1984_2022"
@@ -84,7 +82,7 @@ for config in configs:
     #fitter.fit(sub_dts)#, sub_sts)
     # Plot the results
     out_file = out_dir / (prefix + config["name"] + ".png")
-    cd.plot_fit(fitter,sub_dts, sub_sts, out_file)
+    cd.plot_fit(fitter, sub_dts, sub_sts, out_file)
     outputs[config["name"]] = {
         "fitter": fitter,
         "dist": fitter.dist_type,

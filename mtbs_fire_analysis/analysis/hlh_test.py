@@ -28,8 +28,7 @@ remaining = remaining_times > 0
 while any(remaining):
     # Generate samples for remaining pixels
 
-    expand_samples[remaining] = truth.rvs(size=sum(remaining)
-    )
+    expand_samples[remaining] = truth.rvs(size=sum(remaining))
     # Check if any samples exceed the remaining time
     finished = expand_samples > remaining_times
     # Store the last time for finished pixels
@@ -64,7 +63,7 @@ fitter.fit(dts)
 fitter_censor = HLHD(hazard_inf=hazard_inf, half_life=halflife)
 fitter_censor.fit(dts, last_times)
 fitter_censor_discard = HLHD(hazard_inf=hazard_inf, half_life=halflife)
-fitter_censor_discard.fit(dts, last_times[last_times<37.5])
+fitter_censor_discard.fit(dts, last_times[last_times < 37.5])
 
 
 # Print the original params, first params, then censor params
@@ -85,7 +84,9 @@ print(fitter.neg_log_likelihood(dts))
 print("Fitted parameters with censoring: ")
 print(fitter_censor.neg_log_likelihood(dts, last_times))
 print("Fitted parameters with censoring (discard): ")
-print(fitter_censor_discard.neg_log_likelihood(dts, last_times[last_times<35]))
+print(
+    fitter_censor_discard.neg_log_likelihood(dts, last_times[last_times < 35])
+)
 
 print("Neg log likelihood values with censoring: ")
 print("Original params: ")
@@ -95,11 +96,20 @@ print(fitter.neg_log_likelihood(dts, last_times))
 print("Fitted parameters with censoring: ")
 print(fitter_censor.neg_log_likelihood(dts, last_times))
 print("Fitted parameters with censoring (discard): ")
-print(fitter_censor_discard.neg_log_likelihood(dts, last_times[last_times<35]))
+print(
+    fitter_censor_discard.neg_log_likelihood(dts, last_times[last_times < 35])
+)
 
 out_dir = Path("Outputs")
 
 cd.plot_fit(fitter, dts, last_times, out_dir / "HLHDFitNoCensorAnalytic.png")
-cd.plot_fit(fitter_censor, dts, last_times, out_dir / "HLHDFitCensorAnalytic.png")
+cd.plot_fit(
+    fitter_censor, dts, last_times, out_dir / "HLHDFitCensorAnalytic.png"
+)
 cd.plot_fit(truth, dts, last_times, out_dir / "HLHDFitActualAnalytic.png")
-cd.plot_fit(fitter_censor_discard, dts, last_times, out_dir / "HLHDFitCensorDiscardAnalytic.png")
+cd.plot_fit(
+    fitter_censor_discard,
+    dts,
+    last_times,
+    out_dir / "HLHDFitCensorDiscardAnalytic.png",
+)
