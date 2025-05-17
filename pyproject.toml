@@ -92,7 +92,7 @@ ignore = [
     "E203",
 ]
 [tool.ruff.lint.isort]
-known-first-party = ["tbs_fire_analysis"]
+known-first-party = ["mtbs_fire_analysis"]
 
 [tool.isort]
 profile = "black"
