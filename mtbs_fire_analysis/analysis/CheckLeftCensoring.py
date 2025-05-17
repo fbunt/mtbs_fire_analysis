@@ -1,6 +1,7 @@
-
-import test_helpers as th
-from distributions import HalfLifeHazardDistribution as HLHD
+import mtbs_fire_analysis.analysis.test_helpers as th
+from mtbs_fire_analysis.analysis.distributions import (
+    HalfLifeHazardDistribution as HLHD,
+)
 
 num_pixels = 1_000_000
 time_interval = 38

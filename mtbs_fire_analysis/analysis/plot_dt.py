@@ -5,7 +5,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import polars as pl
 import seaborn as sns
-from mining import build_dts_df
+
+from mtbs_fire_analysis.analysis.mining import build_dts_df
 
 
 def basic_hist(ax, df, bs):

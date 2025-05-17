@@ -3,8 +3,14 @@ from pathlib import Path
 
 import distributions as cd
 import polars as pl
-from distributions import HalfLifeHazardDistribution as HLHD
-from mining import build_dts_df, build_survival_times
+
+from mtbs_fire_analysis.analysis.distributions import (
+    HalfLifeHazardDistribution as HLHD,
+)
+from mtbs_fire_analysis.analysis.mining import (
+    build_dts_df,
+    build_survival_times,
+)
 
 refresh_dts = False
 refresh_sts = True

@@ -1,7 +1,8 @@
-import numpy as np
 from pathlib import Path
 
-import distributions as cd
+import numpy as np
+
+import mtbs_fire_analysis.analysis.distributions as cd
 
 
 def create_sample_data(

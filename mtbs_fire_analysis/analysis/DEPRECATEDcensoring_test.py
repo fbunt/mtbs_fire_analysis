@@ -2,9 +2,10 @@
 
 from pathlib import Path
 
-import distributions as cd
 import numpy as np
 from scipy.stats import weibull_min
+
+import mtbs_fire_analysis.analysis.distributions as cd
 
 num_pixels = 10000
 time_interval = 4

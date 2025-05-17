@@ -1,8 +1,11 @@
 from pathlib import Path
 
-import distributions as cd
 import numpy as np
-from distributions import HalfLifeHazardDistribution as HLHD
+
+import mtbs_fire_analysis.analysis.distributions as cd
+from mtbs_fire_analysis.analysis.distributions import (
+    HalfLifeHazardDistribution as HLHD,
+)
 
 num_pixels = 100_000
 time_interval = 38
