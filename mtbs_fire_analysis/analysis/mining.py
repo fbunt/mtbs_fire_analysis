@@ -1,10 +1,6 @@
-import itertools
-
 import polars as pl
 
-
-def flatmap(func, iterable):
-    return itertools.chain.from_iterable(map(func, iterable))
+from mtbs_fire_analysis.utils import flatmap
 
 
 def _extra_names(col):
