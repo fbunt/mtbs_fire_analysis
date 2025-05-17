@@ -1,14 +1,14 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.optimize import minimize, approx_fprime
-from scipy.special import lambertw
+from scipy.special import lambertw, gammainc, gammaln
 from scipy.stats import weibull_min
-from matplotlib.offsetbox import AnchoredText
 
 LN2 = np.log(2.0)
 _EPS = 1e-12          # numeric safety for logs/divisions
 
-def fit_dist(data, nll_func, survival_data=None, initial_params=None):
+def fit_dist(nll_func, data, data_counts=None, survival_data=None,
+             survival_counts=None, initial_params=None):
     """
     Fit a distribution to the data using maximum likelihood estimation.
 
@@ -35,7 +35,7 @@ def fit_dist(data, nll_func, survival_data=None, initial_params=None):
     result = minimize(
         nll_func,
         initial_params,
-        args=(data, survival_data),
+        args=(data, data_counts, survival_data, survival_counts),
         method="L-BFGS-B",
         bounds=((1e-5, None), (1e-5, None)),
     )
@@ -186,12 +186,11 @@ class HalfLifeHazardDistribution:
         if hazard_inf <= 0 or half_life <= 0:
             raise ValueError("hazard_inf and half_life must be positive.")
         self.hazard_inf = float(hazard_inf)
-        self.lam        = LN2 / float(half_life)          # λ = ln 2 / τ½
+        self.lam        = LN2 / float(half_life)       # λ = ln2 / τ½
 
-    # ---------- handy read-outs ------------------------------------------
+    # ---------- metadata --------------------------------------------------
     @property
     def dist_type(self) -> str:
-        """Short name used by plotting / reporting helpers."""
         return "HalfLifeHazard"
 
     @property
@@ -221,118 +220,184 @@ class HalfLifeHazardDistribution:
     def cdf(self, t):
         return 1.0 - self.survival(t)
 
+    # ---------- first moment --------------------------------------------
+    def mean(self):
+        """
+        Return E[T] (finite for all h_inf>0, half_life>0).
+
+        Numerically stable version:  compute in log-space
+
+            E[T] = e^k / λ · k^(−k) · Γ(k) · P(k,k)
+                 = 1/λ · exp( k − k·log(k) + log Γ(k) + log P(k,k) )
+
+        where  k = h_inf / λ  and  P(k,k) = gammainc(k,k) (regularised).
+
+        Using gammaln(k) avoids overflow in Γ(k);
+        log P(k,k) is safe via np.log since 0 < P(k,k) ≤ 1.
+        """
+
+        k   = self.hazard_inf / self.lam
+        # regularised lower incomplete gamma (0 < p <= 1)
+        p   = gammainc(k, k)
+        #  log E[T]  (all pieces in log-space)
+        log_mean = (
+            k                              #  k
+            - k * np.log(k)                #  -k ln k
+            + gammaln(k)                   #  ln Γ(k)
+            + np.log(p)                    #  ln P(k,k)
+            - np.log(self.lam)             #  -ln λ
+        )
+        return np.exp(log_mean)
+
     # -------------------------------------------------------------------
     #  NLL + gradient in ORIGINAL params  p = (h_inf , tau)
     # -------------------------------------------------------------------
     @staticmethod
-    def _nll_and_grad_orig(params, data, cens):
+    def _nll_and_grad_orig(params,
+                           data,        data_counts=None,
+                           cens=None,   cens_counts=None):
+        """
+        data_counts / cens_counts  = multiplicities for each time-point.
+        If None, defaults to 1.0.
+        """
         h_inf, tau = params
         if h_inf <= 0 or tau <= 0:
             return np.inf, np.array([0.0, 0.0])
 
         lam = LN2 / tau
-        t_fail = np.maximum(data, _EPS)                # guard log(0)
 
-        # helper A(t) = t − (1−e^{−λt})/λ
-        e_fail  = np.exp(-lam * t_fail)
-        A_fail  = t_fail - (1.0 - e_fail) / lam
+        # ---------- failures ---------------------------------------------
+        t_fail   = np.maximum(np.asarray(data, float), _EPS)
+        w_fail   = np.ones_like(t_fail, float) if data_counts is None \
+                                         else np.asarray(data_counts, float)
+        e_fail   = np.exp(-lam * t_fail)
+        g_fail   = 1.0 - e_fail                             # 1−e^{−λt}
+        a_fail   = t_fail - (1.0 - e_fail) / lam
 
+        # ---------- censored ---------------------------------------------
         if cens is not None and len(cens):
-            t_cens = np.maximum(cens, _EPS)
+            t_cens = np.maximum(np.asarray(cens, float), _EPS)
+            w_cens = np.ones_like(t_cens, float) if cens_counts is None \
+                                            else np.asarray(cens_counts, float)
             e_cens = np.exp(-lam * t_cens)
-            A_cens = t_cens - (1.0 - e_cens) / lam
-            A_all  = np.concatenate([A_fail, A_cens])
-        else:
-            A_all = A_fail
+            a_cens = t_cens - (1.0 - e_cens) / lam
 
-        g_fail   = 1.0 - e_fail                       # 1−e^{−λt}
+            t_all  = np.concatenate([t_fail, t_cens])
+            w_all  = np.concatenate([w_fail, w_cens])
+            a_all  = np.concatenate([a_fail, a_cens])
+        else:
+            t_all, w_all, a_all = t_fail, w_fail, a_fail
 
         # ---------- NLL ---------------------------------------------------
-        nll  = -len(t_fail) * np.log(h_inf)
-        nll -= np.sum(np.log(np.maximum(g_fail, _EPS)))
-        nll += h_inf * np.sum(A_all)
+        n_fail = np.sum(w_fail)
+
+        nll  = -n_fail * np.log(h_inf)
+        nll -= np.sum(w_fail * np.log(np.maximum(g_fail, _EPS)))
+        nll += h_inf * np.sum(w_all * a_all)
 
         # ---------- gradient wrt h_inf -----------------------------------
-        grad_h = -len(t_fail) / h_inf + np.sum(A_all)
+        grad_h = -n_fail / h_inf + np.sum(w_all * a_all)
 
         # ---------- gradient wrt tau -------------------------------------
-        dg_dlam_fail  = t_fail * e_fail
-        term1 = -np.sum(dg_dlam_fail / np.maximum(g_fail, _EPS))
+        dg_dlam_fail = t_fail * e_fail
+        term1 = -np.sum(w_fail * dg_dlam_fail / np.maximum(g_fail, _EPS))
 
         # dA/dλ
-        e_all = np.exp(-lam * np.maximum(np.concatenate([t_fail, cens]) if cens is not None else t_fail, _EPS))
-        x_all = np.concatenate([t_fail, cens]) if cens is not None else t_fail
-        dA_dlam_all = ((1.0 - e_all) - x_all * e_all * lam) / (lam**2)
-        term2 = h_inf * np.sum(dA_dlam_all)
+        da_dlam_all = ((1.0 - np.exp(-lam * t_all)) - t_all
+                       * np.exp(-lam * t_all) * lam) / lam**2
+        term2 = h_inf * np.sum(w_all * da_dlam_all)
 
-        grad_tau = (term1 + term2) * (-lam / tau)      # chain rule λ→τ
+        grad_tau = (term1 + term2) * (-lam / tau)         # chain-rule
         return nll, np.array([grad_h, grad_tau])
 
     # -------------------------------------------------------------------
-    #  NLL + gradient in LOG params  θ = (log h_inf , log τ)
+    #  NLL + gradient in LOG-params  θ = (log h_inf , log τ)
     # -------------------------------------------------------------------
     @classmethod
-    def _nll_and_grad_log(cls, theta, data, cens):
+    def _nll_and_grad_log(cls, theta,
+                          data, data_counts,
+                          cens, cens_counts):
         h_inf, tau = np.exp(theta)
-        nll, g_orig = cls._nll_and_grad_orig((h_inf, tau), data, cens)
-        grad_log = g_orig * np.array([h_inf, tau])     # ∂p/∂θ = p
+        nll, g_orig = cls._nll_and_grad_orig((h_inf, tau),
+                                             data, data_counts,
+                                             cens, cens_counts)
+        grad_log = g_orig * np.array([h_inf, tau])
         return nll, grad_log
 
     # -------------------------------------------------------------------
     #  Public NLL helper (original scale)
     # -------------------------------------------------------------------
-    def neg_log_likelihood(self, data, cens=None):
-        return self._nll_and_grad_orig(
-            (self.hazard_inf, self.half_life), data, cens
-        )[0]
+    def neg_log_likelihood(self,
+                           data,        data_counts=None,
+                           survival_data=None,   survival_counts=None):
+        return self._nll_and_grad_orig((self.hazard_inf, self.half_life),
+                                       data, data_counts,
+                                       survival_data, survival_counts)[0]
 
     # -------------------------------------------------------------------
-    #  Gradient consistency check (finite diff vs analytic)
+    #  Gradient consistency check
     # -------------------------------------------------------------------
     @classmethod
-    def _check_grad_consistency(cls, theta0, data, cens, tol=1e-4):
-        """
-        Return True if analytic and finite-difference grads agree at theta0.
-        """
-        nll, g_analytic = cls._nll_and_grad_log(theta0, data, cens)
+    def _check_grad_consistency(cls, theta0,
+                                data, data_counts,
+                                cens, cens_counts,
+                                tol=1e-4):
+        nll, g_a = cls._nll_and_grad_log(theta0,
+                                         data, data_counts,
+                                         cens, cens_counts)
 
-        def _obj(t):  # wrapper for approx_fprime
-            return cls._nll_and_grad_log(t, data, cens)[0]
+        def _obj(t):
+            return cls._nll_and_grad_log(t,
+                                         data, data_counts,
+                                         cens, cens_counts)[0]
 
         g_fd = approx_fprime(theta0, _obj, np.sqrt(np.finfo(float).eps))
-        ok = np.allclose(g_analytic, g_fd, rtol=tol, atol=tol)
+        ok = np.allclose(g_a, g_fd, rtol=tol, atol=tol)
         if not ok:
-            print("\n[HalfLifeHazard] WARNING: analytic gradient mismatch "
-                  f"(max diff {np.max(np.abs(g_analytic - g_fd)):.2e}). "
-                  "Falling back to gradient-free optimisation.")
+            print("\n[HalfLife] WARNING: gradient mismatch "
+                  f"(max diff {np.max(np.abs(g_a - g_fd)):.2e}); "
+                  "switching to finite-diff optimisation.")
         return ok
 
     # -------------------------------------------------------------------
-    #  Maximum-likelihood fit (robust)
+    #  Maximum-likelihood fit
     # -------------------------------------------------------------------
-    def fit(self, data, survival_data=None, verbose=False):
+    def fit(self,
+            data, data_counts=None,
+            survival_data=None, survival_counts=None,
+            verbose=False):
+        """
+        Parameters
+        ----------
+        data, data_counts               : failure times + multiplicities
+        survival_data, survival_counts  : right-censor times + multiplicities
+        """
         data = np.asarray(data, float)
-        cens = None if survival_data is None else np.asarray(survival_data, float)
+
+        if survival_data is not None:
+            survival_data = np.asarray(survival_data, float)
 
         theta0 = np.log([self.hazard_inf, self.half_life])
         log_bounds = ((np.log(1e-12), np.log(4.0)),
-                      (np.log(1e-12), np.log(1000.0)))
+                      (np.log(1e-12), np.log(1e3)))
 
-        use_grad = self._check_grad_consistency(theta0, data, cens)
+        use_grad = self._check_grad_consistency(theta0,
+                                                data, data_counts,
+                                                survival_data, survival_counts)
 
-        def _obj(theta, d, c):
-            return self._nll_and_grad_log(theta, d, c)[0]
+        def _obj(theta, d, dc, c, cc):
+            return self._nll_and_grad_log(theta, d, dc, c, cc)[0]
 
         if use_grad:
-            def _jac(theta, d, c):
-                return self._nll_and_grad_log(theta, d, c)[1]
+            def _jac(theta, d, dc, c, cc):
+                return self._nll_and_grad_log(theta, d, dc, c, cc)[1]
         else:
             _jac = None
 
         res = minimize(
             fun     = _obj,
             x0      = theta0,
-            args    = (data, cens),
+            args    = (data, data_counts, survival_data, survival_counts),
             jac     = _jac,
             method  = "L-BFGS-B",
             bounds  = log_bounds,
@@ -416,8 +481,10 @@ def plot_fit(dist_obj, samples, cens=None,
     bins = np.arange(min_x, max_x + 1, 1)
 
     # --- figure set‑up ------------------------------------------------------
-    num_plots = 2 + (1 if cens is not None else 0)
-    fig, axs = plt.subplots(1, num_plots, figsize=(10, 4))
+    if cens is not None:
+        fig, axs = plt.subplots(4, 1, figsize=(10, 20))
+    else:
+        fig, axs = plt.subplots(3, 1, figsize=(10, 15))
     if title:
         fig.suptitle(title, fontsize=14, y=1.02)
 
@@ -434,6 +501,9 @@ def plot_fit(dist_obj, samples, cens=None,
     axs[0].plot(
         x_plot, dist_obj.pdf(x_plot), lw=2, color="crimson", label="fit PDF"
     )
+    # Vertical line at the mean
+    mean = dist_obj.mean()
+    axs[0].axvline(mean, color="blue", linestyle="--", label="Return Interval")
     axs[0].set_ylabel("density")
     axs[0].set_title("Histogram vs fitted PDF")
     axs[0].legend()
@@ -447,13 +517,27 @@ def plot_fit(dist_obj, samples, cens=None,
     axs[1].plot(
         x_plot, dist_obj.cdf(x_plot), lw=2, color="crimson", label="fit CDF"
     )
+    # Vertical line at the mean
+    axs[1].axvline(mean, color="blue", linestyle="--", label="Return Interval")
+
     axs[1].set_ylabel("probability")
     axs[1].set_title("ECDF vs fitted CDF")
     axs[1].legend()
 
+    # -------- Hazard panel --------------------------------------------------
+    axs[2].plot(
+        x_plot, dist_obj.hazard(x_plot), lw=2, color="crimson", label="fit hazard"
+    )
+    axs[2].set_ylabel("hazard")
+    axs[2].set_title("Fitted hazard function")
+    # add assymptotic line at h_inf
+    axs[2].axhline(dist_obj.hazard_inf, color="green", linestyle="--",
+                   label="h_inf")
+    axs[2].legend()
+
     if cens is not None:
         # -------- Survival panel ---------------------------------------------
-        axs[2].hist(
+        axs[3].hist(
             cens,
             bins=bins,
             density=True,
@@ -462,8 +546,8 @@ def plot_fit(dist_obj, samples, cens=None,
             alpha=0.7,
             label="last survival",
         )
-        axs[2].set_ylabel("density")
-        ax2 = axs[2].twinx()
+        axs[3].set_ylabel("density")
+        ax2 = axs[3].twinx()
 
         ax2.plot(
             x_plot, dist_obj.survival(x_plot), lw=2, color="crimson",
@@ -471,11 +555,11 @@ def plot_fit(dist_obj, samples, cens=None,
         )
 
         # Combine legends from both axes
-        lines, labels = axs[2].get_legend_handles_labels()
+        lines, labels = axs[3].get_legend_handles_labels()
         lines2, labels2 = ax2.get_legend_handles_labels()
         ax2.legend(lines + lines2, labels + labels2, loc="upper center")
         ax2.set_ylabel("survival probability", color="crimson")
-        axs[2].set_title("Histogram vs fitted survival")
+        axs[3].set_title("Histogram vs fitted survival")
 
     fig.supxlabel("Years since last fire")
 
