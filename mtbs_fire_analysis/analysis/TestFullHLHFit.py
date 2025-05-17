@@ -44,15 +44,46 @@ else:
 - Plot the results, and the parameters of the fit
 - Save the results to files
 """
-test_config = {"name": "NW Mountains Forest", "eco": [6], "nlcd": [41, 42, 43]}
+configs = [{"name": "Northern Wetland", "eco": [5], "nlcd": [90, 95]}, # 4M
+           {"name": "NW Mountain Forest", "eco": [6], "nlcd": [41, 42, 43]}, # 100M
+           {"name": "NW Mountain Schrub", "eco": [6], "nlcd": [52]}, # 41M
+           {"name": "NW Mountain Grassland", "eco": [6], "nlcd": [71]}, # 52M
+           {"name": "Eastern Temperate Forest", "eco": [8], "nlcd": [41, 42, 43]}, # 62M
+           {"name": "Eastern Temperate Wetlands", "eco": [8], "nlcd": [90,95]}, # 31M
+           {"name": "Great Plains Forest", "eco": [9], "nlcd": [41, 42, 43]}, # 5M
+           {"name": "Great Plains Schrub", "eco": [9], "nlcd": [52]}, # 33M
+           {"name": "Great Plains Grassland", "eco": [9], "nlcd": [71]}, # 57M 
+           {"name": "Great Plains Wetland", "eco": [9], "nlcd": [90, 95]}, # 8M 
+           {"name": "NA Desert Forest", "eco": [10], "nlcd": [41, 42, 43]}, # 7M 
+           {"name": "NA Desert Schrub", "eco": [10], "nlcd": [52]}, # 85M
+           {"name": "NA Desert Grassland", "eco": [10], "nlcd": [71]}, # 94M
+           {"name": "Medit California Forest", "eco": [11], "nlcd": [41, 42, 43]}, # 8M
+           {"name": "Medit California Schrub", "eco": [11], "nlcd": [52]}, # 25M
+           {"name": "Medit California Grassland", "eco": [11], "nlcd": [71]}, # 18M
+           {"name": "Southern Semiarid Schrub", "eco": [12], "nlcd": [52]}, # 10M
+           {"name": "Temperate Sierra Forest", "eco": [13], "nlcd": [41, 42, 43]}, # 20M
+           {"name": "Temperate Sierra Schrub", "eco": [13], "nlcd": [52]}, # 11M
+           {"name": "Temperate Sierra Grassland", "eco": [13], "nlcd": [71]}, # 6M
+           {"name": "Tropical Wetland", "eco": [15], "nlcd": [90, 95]}, # 11M
+           ]
 
-configs = [test_config]
+eco_to_str = {
+    5: "Northern Forest",
+    6: "NW Forested Mountains",
+    7: "Marine West Coast Forest",
+    8: "Eastern Temperate Forests",
+    9: "Great Plains",
+    10: "North American Deserts",
+    11: "Mediterranean California",
+    12: "Southern Semiarid Highlands",
+    13: "Temperate Sierras",
+}
 
 outputs = {}
 
 out_dir = Path("Outputs")
 
-for config in configs:
+for config in configs[1]:
     prefix = "TestHLHFull"
     # Get the data for this config
     sub_dts = (
