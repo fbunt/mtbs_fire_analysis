@@ -92,9 +92,9 @@ ignore = [
     "E203",
 ]
 [tool.ruff.lint.isort]
-known-first-party = ["analysis", "pipeline"]
+known-first-party = ["tbs_fire_analysis"]
 
 [tool.isort]
 profile = "black"
 line_length = 79
-known_first_party = ["analysis", "pipeline"]
+known_first_party = ["mtbs_fire_analysis"]

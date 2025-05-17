@@ -2,8 +2,11 @@
 # ref: https://www.epa.gov/eco-research/ecoregions-north-america
 import geopandas as gpd
 
-from defaults import DEFAULT_CRS
-from paths import ECO_REGIONS_PATH, RAW_ECO_REGIONS_PATH
+from mtbs_fire_analysis.defaults import DEFAULT_CRS
+from mtbs_fire_analysis.pipeline.paths import (
+    ECO_REGIONS_PATH,
+    RAW_ECO_REGIONS_PATH,
+)
 
 if __name__ == "__main__":
     eco_full_df = gpd.read_file(RAW_ECO_REGIONS_PATH).to_crs(DEFAULT_CRS)
@@ -26,7 +29,7 @@ if __name__ == "__main__":
             "eco_lvl_1": eco_lvl_1,
             "eco_lvl_2": eco_lvl_2,
             "eco_lvl_3": eco_lvl_3,
-            "geometry": eco_full_df.geometry
+            "geometry": eco_full_df.geometry,
         },
     )
     out_df.to_file(ECO_REGIONS_PATH)

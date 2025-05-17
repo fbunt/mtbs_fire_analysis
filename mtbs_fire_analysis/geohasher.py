@@ -5,10 +5,10 @@ import numpy as np
 import pandas as pd
 from affine import Affine
 
-from defaults import (
+from mtbs_fire_analysis.defaults import (
+    DEFAULT_CRS,
     DEFAULT_GEOHASH_AFFINE,
     DEFAULT_GEOHASH_GRID_SHAPE,
-    DEFAULT_CRS,
 )
 
 

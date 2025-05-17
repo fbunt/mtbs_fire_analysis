@@ -4,8 +4,8 @@ exe() {
     "$@"
 }
 
-src=$(python -c "from paths import INTERMEDIATE_WUI; print(INTERMEDIATE_WUI)")
-dst_dir=$(python -c "from paths import WUI_PATH; print(WUI_PATH)")
+src=$(python -c "from mtbs_fire_analysis.pipeline.paths import INTERMEDIATE_WUI; print(INTERMEDIATE_WUI)")
+dst_dir=$(python -c "from mtbs_fire_analysis.pipeline.paths import WUI_PATH; print(WUI_PATH)")
 declare -a years=("1990" "2000" "2010" "2020")
 declare -a flavors=("flag" "class")
 for year in "${years[@]}"; do
@@ -25,9 +25,9 @@ for year in "${years[@]}"; do
 done
 
 
-src_dir=$(python -c "from paths import WUI_PATH; print(WUI_PATH)")
-dst_dir=$(python -c "from paths import WUI_PATH; print(WUI_PATH)")
-max_dist=$(python -c "from defaults import DEFAULT_PROX_MAX_DIST; print(DEFAULT_PROX_MAX_DIST)")
+src_dir=$(python -c "from mtbs_fire_analysis.pipeline.aths import WUI_PATH; print(WUI_PATH)")
+dst_dir=$(python -c "from mtbs_fire_analysis.pipeline.aths import WUI_PATH; print(WUI_PATH)")
+max_dist=$(python -c "from dmtbs_fire_analysis.pipeline.efaults import DEFAULT_PROX_MAX_DIST; print(DEFAULT_PROX_MAX_DIST)")
 for year in "${years[@]}"; do
     src="${src_dir}/wui_bool_${year}.tif"
     dst="${dst_dir}/wui_prox_${year}.tif"

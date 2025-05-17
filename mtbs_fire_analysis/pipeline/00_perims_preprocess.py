@@ -1,8 +1,8 @@
 import geopandas as gpd
 import numpy as np
 
-from defaults import DEFAULT_CRS
-from paths import PERIMS_PATH, RAW_PERIMS_PATH
+from mtbs_fire_analysis.defaults import DEFAULT_CRS
+from mtbs_fire_analysis.pipeline.paths import PERIMS_PATH, RAW_PERIMS_PATH
 
 INCID_TYPE_MAPPING = {
     "Unknown": 0,

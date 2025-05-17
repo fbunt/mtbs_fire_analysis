@@ -1,4 +1,5 @@
 import argparse
+import time
 
 import dask.dataframe as dd
 import dask_geopandas as dgpd
@@ -7,12 +8,11 @@ import numpy as np
 import pandas as pd
 import polars as pl
 import raster_tools as rts
-import time
 from dask.diagnostics import ProgressBar
 
-import utils
-from defaults import DEFAULT_CRS
-from paths import (
+from mtbs_fire_analysis.defaults import DEFAULT_CRS
+from mtbs_fire_analysis.geohasher import GridGeohasher
+from mtbs_fire_analysis.paths import (
     ECO_REGIONS_PATH,
     PERIMS_PATH,
     STATES_PATH,
@@ -116,7 +116,7 @@ def _add_raster(points, raster, name):
         .compute()
     )
     print(f"{len(other_points) = :,}")
-    hasher = utils.GridGeohasher()
+    hasher = GridGeohasher()
     other_points["geohash"] = hasher.geohash(other_points.geometry)
     other_points = other_points.drop("geometry", axis=1)
     points = polars_join(points, other_points)
@@ -204,7 +204,7 @@ def _build_dataframe_and_save(
     geometry = points["geometry"]
     # Drop geometries to avoid dask_geopandas (bugs)
     points = points.drop("geometry", axis=1)
-    hasher = utils.GridGeohasher()
+    hasher = GridGeohasher()
     points["geohash"] = hasher.geohash(geometry)
     geometry = None
 
