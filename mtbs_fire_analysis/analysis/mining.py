@@ -84,7 +84,7 @@ def build_survival_times(lf, extra_cols=None):
         .agg(
             pl.len().alias("n"),
             pl.col("eco_lvl_1").last().alias("eco"),
-            (max_time - pl.col("Ig_Date").last()).dt.total_days().alias("survival_time") /365 ,
+            (max_time - pl.col("Ig_Date").last()).dt.total_days().alias("st") /365 ,
             pl.col(*extra_cols).last(),
         )
         .drop_nulls()

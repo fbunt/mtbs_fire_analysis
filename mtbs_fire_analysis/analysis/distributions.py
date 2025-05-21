@@ -422,6 +422,22 @@ class HalfLifeHazardDistribution:
         z   = c + lambertw(-np.exp(-c), k=0).real
         return z / self.lam
 
+    def reset_params(self, hazard_inf=None, half_life=None):
+        """
+        Reset the parameters of the distribution.
+
+        Parameters
+        ----------
+        hazard_inf : float, optional
+            New value for the hazard_inf parameter.
+        half_life : float, optional
+            New value for the half_life parameter.
+        """
+        if hazard_inf is not None:
+            self.hazard_inf = hazard_inf
+        if half_life is not None:
+            self.lam = LN2 / half_life
+
 
 
 def deficit(fit, data, ref: float = 0.0):
@@ -448,7 +464,7 @@ def deficit(fit, data, ref: float = 0.0):
 
 
 
-def plot_fit(dist_obj, samples, cens=None,
+def plot_fit_old(dist_obj, samples, cens=None,
             output_name="DistributionTestOutput",
             title=None):
     """
@@ -575,4 +591,154 @@ def plot_fit(dist_obj, samples, cens=None,
     )
     plt.tight_layout()
     plt.savefig(output_name,bbox_extra_artists=[extra], bbox_inches='tight')
+    plt.close(fig)
+
+
+def _weighted_ecdf(x: np.ndarray, w: np.ndarray):
+    """Return the x values and cumulative probabilities for a weighted ECDF."""
+    # sort by x
+    order = np.argsort(x)
+    x_sorted = x[order]
+    w_sorted = w[order]
+    cum_w = np.cumsum(w_sorted)
+    total = cum_w[-1]
+    return x_sorted, cum_w / total
+
+
+def plot_fit(
+    dist_obj,
+    dts,
+    dt_counts=None,
+    survivals=None,
+    survival_counts=None,
+    output_name="DistributionTestOutput",
+    title=None,
+    max_dt=None,
+):
+    """Plot a sample distribution (histogram & ECDF) next to the fitted parametric functions.
+
+    Parameters
+    ----------
+    dist_obj : object
+        Fitted distribution object exposing pdf/cdf/hazard/survival/mean/params.
+    dts : 1‑D array‑like
+        Failure times ("dts").
+    dt_counts : 1‑D array‑like or None, optional
+        Multiplicities associated with *dts*. If **None**, each observation is
+        assumed to occur once.
+    survivals : 1‑D array‑like or None, optional
+        Right‑censor times ("survival").
+    survival_counts : 1‑D array‑like or None, optional
+        Multiplicities associated with *survivals*.
+    output_name : str, optional
+        Path for the output image file.
+    title : str or None, optional
+        Figure title.
+    max_dt : float or int or None, optional
+        Extend the x‑axis (and fitted curves) to this value.  If *None*, the
+        maximum of the supplied data is used.
+    """
+
+    dts = np.asarray(dts, float)
+    if dts.ndim == 0:
+        dts = dts[None]
+    w_fail = (
+        np.ones_like(dts, float) if dt_counts is None else np.asarray(dt_counts, float)
+    )
+
+    if survivals is not None and len(survivals):
+        survivals = np.asarray(survivals, float)
+        w_surv = (
+            np.ones_like(survivals, float)
+            if survival_counts is None
+            else np.asarray(survival_counts, float)
+        )
+    else:
+        survivals, w_surv = None, None
+
+    # ------------------------------------------------------------------
+    # Axis range & evaluation grid
+    # ------------------------------------------------------------------
+    min_x = int(np.floor(dts.min()))
+    data_max = dts.max()
+    if survivals is not None:
+        data_max = max(data_max, survivals.max())
+    max_x = max(max_dt, data_max) if max_dt is not None else data_max
+    max_x = int(np.ceil(max_x))
+
+    x_plot = np.linspace(min_x, max_x, 500)
+    bins = np.arange(min_x, max_x + 1, 1)
+
+    # ------------------------------------------------------------------
+    # Figure setup
+    # ------------------------------------------------------------------
+    n_rows = 4 if survivals is not None else 3
+    fig, axs = plt.subplots(n_rows, 1, figsize=(10, 5 * n_rows))
+    if title:
+        fig.suptitle(title, fontsize=14, y=1.02)
+
+    # ------------------------------------------------------------------
+    # PDF / Histogram panel
+    # ------------------------------------------------------------------
+    axs[0].hist(dts, bins=bins, weights=w_fail, density=True, color="lightgrey", edgecolor="k", alpha=0.7, label="FRIs")
+    axs[0].plot(x_plot, dist_obj.pdf(x_plot), lw=2, color="crimson", label="fit PDF")
+    mean_val = dist_obj.mean()
+    axs[0].axvline(mean_val, color="blue", linestyle="--", label="Return Interval")
+    axs[0].set_ylabel("density")
+    axs[0].set_title("Histogram vs fitted PDF")
+    axs[0].legend()
+
+    # ------------------------------------------------------------------
+    # CDF / ECDF panel
+    # ------------------------------------------------------------------
+    x_ecdf, y_ecdf = _weighted_ecdf(dts, w_fail)
+    axs[1].step(x_ecdf, y_ecdf, where="post", color="black", label="FRI CDF")
+    axs[1].plot(x_plot, dist_obj.cdf(x_plot), lw=2, color="crimson", label="fit CDF")
+    axs[1].axvline(mean_val, color="blue", linestyle="--", label="Return Interval")
+    axs[1].set_ylabel("probability")
+    axs[1].set_title("ECDF vs fitted CDF")
+    axs[1].legend()
+
+    # ------------------------------------------------------------------
+    # Hazard panel
+    # ------------------------------------------------------------------
+    axs[2].plot(x_plot, dist_obj.hazard(x_plot), lw=2, color="crimson", label="fit hazard")
+    axs[2].set_ylabel("hazard")
+    axs[2].set_title("Fitted hazard function")
+    axs[2].legend()
+
+    # ------------------------------------------------------------------
+    # Survival panel (optional)
+    # ------------------------------------------------------------------
+    if survivals is not None:
+        axs[3].hist(survivals, bins=bins, weights=w_surv, density=True, color="lightgrey", edgecolor="k", alpha=0.7, label="survivals")
+        ax2 = axs[3].twinx()
+        ax2.plot(x_plot, dist_obj.survival(x_plot), lw=2, color="crimson", label="fit survival")
+        # merge legends
+        lines, labels = axs[3].get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax2.legend(lines + lines2, labels + labels2, loc="upper center")
+        axs[3].set_ylabel("density")
+        ax2.set_ylabel("survival probability", color="crimson")
+        axs[3].set_title("Survivals vs fitted survival")
+
+    # ------------------------------------------------------------------
+    # Common x‑label & parameter box
+    # ------------------------------------------------------------------
+    fig.supxlabel("Years since last fire")
+
+    param_labels = [f"{k}: {v:.4g}" for k, v in dist_obj.params.items()]
+    extra = fig.legend(
+        handles=[plt.Line2D([], [], lw=0)] * len(param_labels),
+        labels=param_labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.0),
+        frameon=True,
+        title="Parameter values",
+        ncol=len(param_labels),
+        handlelength=0,
+    )
+
+    plt.tight_layout()
+    plt.savefig(output_name, bbox_extra_artists=[extra], bbox_inches="tight")
     plt.close(fig)
