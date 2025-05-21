@@ -32,3 +32,5 @@ WORKDIR /workspace
 USER ${USERNAME}
 
 CMD ["/bin/bash"]
+
+ENV PYTHONPATH=/workspaces/mtbs_fire_analysis
