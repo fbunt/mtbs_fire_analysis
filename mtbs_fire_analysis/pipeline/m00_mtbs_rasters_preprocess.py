@@ -5,10 +5,14 @@ from pathlib import Path
 import dask.array as da
 import geopandas as gpd
 import numpy as np
+import raster_tools as rts
 from dask.diagnostics import ProgressBar
 
-import raster_tools as rts
-from paths import CLEANED_RASTER_DATA_DIR, RAW_RASTER_DATA_DIR, STATES_PATH
+from mtbs_fire_analysis.pipeline.paths import (
+    CLEANED_RASTER_DATA_DIR,
+    RAW_RASTER_DATA_DIR,
+    STATES_PATH,
+)
 
 DATA_TIF_FMT = "mtbs_{aoi}_{year}.tif"
 
