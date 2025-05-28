@@ -12,7 +12,7 @@ from dask.diagnostics import ProgressBar
 
 from mtbs_fire_analysis.defaults import DEFAULT_CRS
 from mtbs_fire_analysis.geohasher import GridGeohasher
-from mtbs_fire_analysis.paths import (
+from mtbs_fire_analysis.pipeline.paths import (
     ECO_REGIONS_PATH,
     PERIMS_PATH,
     STATES_PATH,
@@ -50,12 +50,12 @@ def get_eco_regions_by_aoi(aoi_poly, crs):
 def parallel_sjoin(points, other, nparts=10):
     print(f"Joining {len(points)} x {len(other)}")
     if len(points) > 50_000:
-        print("Performing parallel join")
+        print("Performing parallel sjoin")
         points = dgpd.from_geopandas(points, npartitions=nparts)
         with ProgressBar():
             points = points.sjoin(other, how="inner").compute()
     else:
-        print("Performing serial join")
+        print("Performing serial sjoin")
         points = gpd.sjoin(points, other, how="inner")
     return points
 
