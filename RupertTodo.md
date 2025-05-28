@@ -28,6 +28,19 @@ Secondary:
         - num unique fires, num fire overlaps, num fire pixels
 
 
+BP scores:
+- Go over score functions used in paper, determine if they can be split for the inbalanced classes in burned/unburned
+- get raster tools
+- get bp raster 
+- get mtbs burned/unburned yearly data
+- make sure they are on same grid
+- apply score based on nothing burned
+- apply correction to burned pixels
+
+- write the above allowing for splitting based on polygons
+- repeat for some version of our script
+
+
 Requests of Fred:
 - get # of pixels non burnt by eco 1/2 and nlcd
 - aspect/slope/altitude per pixel joined to datasets
