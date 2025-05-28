@@ -89,7 +89,7 @@ configs = [{"name": "Northern Wetland", "eco": [5], "nlcd": [90, 95]}, # 4M
 
 outputs = {}
 
-out_dir = Path("mtbs_fire_analysis") / "Outputs" / "HLH_Fits"
+out_dir = Path("mtbs_fire_analysis") / "outputs" / "HLH_Fits"
 out_dir.mkdir(parents=False, exist_ok=True)
 
 def do_fit(fitter, dt_polygons, st_polygons, num_pixels, def_st):
