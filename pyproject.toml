@@ -33,6 +33,7 @@ dependencies = [
   "shapely>=2",
   "tqdm",
   "xarray",
+  "lifelines>=0.30.0",
 ]
 
 
