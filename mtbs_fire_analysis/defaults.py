@@ -1,5 +1,6 @@
 import rasterio as rio
 from affine import Affine
+from odc.geo.geobox import GeoBox
 
 DEFAULT_GEOHASH_AFFINE = Affine(
     30.0, 0.0, -2406135.0, 0.0, -30.0, 3222585.0, 0.0, 0.0, 1.0
@@ -7,7 +8,7 @@ DEFAULT_GEOHASH_AFFINE = Affine(
 DEFAULT_GEOHASH_GRID_SHAPE = (100150, 157144)
 # Taken from MTBS raster files
 DEFAULT_CRS = rio.CRS.from_wkt(
-"""
+    """
 PROJCRS["USA_Contiguous_Albers_Equal_Area_Conic_USGS_version",
     BASEGEOGCRS["NAD83",
         DATUM["North American Datum 1983",
@@ -47,6 +48,9 @@ PROJCRS["USA_Contiguous_Albers_Equal_Area_Conic_USGS_version",
             LENGTHUNIT["metre",1,
                 ID["EPSG",9001]]]]
 """
+)
+DEFAULT_GEOHASH_GEOBOX = GeoBox(
+    DEFAULT_GEOHASH_GRID_SHAPE, DEFAULT_GEOHASH_AFFINE, DEFAULT_CRS
 )
 
 DEFAULT_PROX_MAX_DIST = 40_500
