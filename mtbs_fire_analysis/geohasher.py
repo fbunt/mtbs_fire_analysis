@@ -1,5 +1,6 @@
 from functools import partial
 
+import dask
 import geopandas as gpd
 import numpy as np
 import pandas as pd
@@ -70,7 +71,11 @@ def add_geometry_from_geohash(ddf, hasher=None):
     if hasher is None:
         hasher = GridGeohasher()
 
-    func = partial(_add_geom, hasher=hasher)
-    meta = ddf._meta.copy()
-    meta = gpd.GeoDataFrame(meta, geometry=gpd.GeoSeries([], crs=hasher.crs))
-    return ddf.map_partitions(func, meta=meta)
+    if dask.is_dask_collection(ddf):
+        func = partial(_add_geom, hasher=hasher)
+        meta = ddf._meta.copy()
+        meta = gpd.GeoDataFrame(
+            meta, geometry=gpd.GeoSeries([], crs=hasher.crs)
+        )
+        return ddf.map_partitions(func, meta=meta)
+    return _add_geom(ddf, hasher)
