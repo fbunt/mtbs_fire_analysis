@@ -10,7 +10,7 @@ from mtbs_fire_analysis.analysis.mining import (
 )
 
 
-out_dir = Path("mtbs_fire_analysis/Outputs/HLH_Fits")
+out_dir = Path("mtbs_fire_analysis/outputs/HLH_Fits")
 
 pickle_file = out_dir / "HLH_fits.pkl"
 
