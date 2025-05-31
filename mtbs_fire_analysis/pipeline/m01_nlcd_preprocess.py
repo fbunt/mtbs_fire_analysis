@@ -2,10 +2,10 @@ import argparse
 import glob
 from pathlib import Path
 
+import raster_tools as rts
 from dask.diagnostics import ProgressBar
 
-import raster_tools as rts
-from paths import NLCD_PATH, RAW_NLCD
+from mtbs_fire_analysis.pipeline.paths import NLCD_PATH, RAW_NLCD
 
 
 def _path(path):
@@ -33,3 +33,4 @@ def main(like_path):
 
 if __name__ == "__main__":
     args = _get_parser().parse_args()
+    main(args.like_path)
