@@ -14,16 +14,16 @@ from mtbs_fire_analysis.analysis.mining import (
     build_survival_times,
 )
 
-refresh_dts = False
-refresh_sts = False
-refresh_polygons = False
+refresh_dts = True
+refresh_sts = True
+refresh_polygons = True
 
 bootstrap = False
 
-cache_path = Path("/fastdata") / "FredData" / "cache"
+cache_path = Path("/run") / "media" / "fire_analysis" / "cache"
 
 if refresh_dts or refresh_sts:
-    data_path = Path("/fastdata") / "FredData" / "mtbs_CONUS_1984_2022"
+    data_path = Path("/run") / "media" / "fire_analysis" / "data_tmp"
     lf = pl.scan_parquet(data_path)
     cache_path.mkdir(parents=True, exist_ok=True)
 
