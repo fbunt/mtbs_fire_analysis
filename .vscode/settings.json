@@ -1,3 +1,6 @@
 {
-  "jupyter.notebookFileRoot": "/workspaces/mtbs_fire_analysis", 
+  "jupyter.notebookFileRoot": "/workspaces/mtbs_fire_analysis",
+  "settings": {
+        "python.defaultInterpreterPath": "/workspaces/mtbs_fire_analysis/.venv/bin/python",
+    }
 }

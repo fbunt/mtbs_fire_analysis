@@ -11,7 +11,7 @@
   "remoteUser": "vscode",
 
   "mounts": [
-  "source=${localEnv:FASTDATA_PATH},target=/fastdata,type=bind,consistency=cached,readonly=false"
+  "source=/run/media/fire_analysis,target=/fire_analysis_data,type=bind,consistency=cached,readonly=false"
   ],
   "postCreateCommand": "uv sync",              // creates/updates .venv
   "postStartCommand":  "uv sync --quiet",      // cheap no-op on second run
