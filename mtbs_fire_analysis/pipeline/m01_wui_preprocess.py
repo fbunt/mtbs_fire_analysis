@@ -1,11 +1,9 @@
 import glob
-import shutil
 
 import dask
 import dask.array as da
 import dask.dataframe as dd
 import dask_geopandas as dgpd
-import geopandas as gpd
 import numpy as np
 from dask.distributed import Client, LocalCluster
 from paths import INTERMEDIATE_WUI, ROOT_TMP_DIR
