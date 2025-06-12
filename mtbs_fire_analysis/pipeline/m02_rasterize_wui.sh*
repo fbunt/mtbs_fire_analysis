@@ -15,13 +15,13 @@ for year in "${years[@]}"; do
         exe gdal_rasterize -l wui -a "${key}" \
             -ot Byte -a_nodata 255 -init 255 -of GTiff \
             -tr 30.0 30.0 -te -2406135.0 218085.0 2308185.0 3222585.0 \
-            "${src}" "${dst_dir}/${key}.tif"
+            -co COMPRESS=LZW "${src}" "${dst_dir}/${key}.tif"
     done
     key="wui_bool_${year}"
     exe gdal_rasterize -l "${key}" -a "${key}" \
         -ot Byte -a_nodata 255 -init 255 -of GTiff \
         -tr 30.0 30.0 -te -2406135.0 218085.0 2308185.0 3222585.0 \
-        "${src}" "${dst_dir}/${key}.tif"
+        -co COMPRESS=LZW "${src}" "${dst_dir}/${key}.tif"
 done
 
 
@@ -31,6 +31,6 @@ max_dist=$(python -c "from mtbs_fire_analysis.defaults import DEFAULT_PROX_MAX_D
 for year in "${years[@]}"; do
     src="${src_dir}/wui_bool_${year}.tif"
     dst="${dst_dir}/wui_prox_${year}.tif"
-    exe gdal_proximity "${src}" "${dst}" \
-        -values 1 -distunits GEO -maxdist "${max_dist}"
+    exe gdal_proximity "${src}" "${dst}" -values 1 -distunits GEO \
+        -maxdist "${max_dist}" -ot Int32 -co COMPRESS=LZW
 done
