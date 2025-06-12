@@ -4,33 +4,53 @@ exe() {
     "$@"
 }
 
-src=$(python -c "from mtbs_fire_analysis.pipeline.paths import INTERMEDIATE_WUI; print(INTERMEDIATE_WUI)")
-dst_dir=$(python -c "from mtbs_fire_analysis.pipeline.paths import WUI_PATH; print(WUI_PATH)")
-declare -a years=("1990" "2000" "2010" "2020")
-declare -a flavors=("flag" "class")
-for year in "${years[@]}"; do
-    for flavor in "${flavors[@]}"; do
-        key="wui_${flavor}_${year}"
-        # Use Byte because Int8 is not working for some reason
-        exe gdal_rasterize -l wui -a "${key}" \
-            -ot Byte -a_nodata 255 -init 255 -of GTiff \
-            -tr 30.0 30.0 -te -2406135.0 218085.0 2308185.0 3222585.0 \
-            -co COMPRESS=LZW "${src}" "${dst_dir}/${key}.tif"
-    done
-    key="wui_bool_${year}"
-    exe gdal_rasterize -l "${key}" -a "${key}" \
+rasterize() {
+    year=$1
+    flavor=$2
+    layer=$3
+    src=$(python -c "from mtbs_fire_analysis.pipeline.paths import INTERMEDIATE_WUI; print(INTERMEDIATE_WUI)")
+    dst_dir=$(python -c "from mtbs_fire_analysis.pipeline.paths import WUI_PATH; print(WUI_PATH)")
+    key="wui_${flavor}_${year}"
+    dst="${dst_dir}/${key}.tif"
+
+    rm "${dst}"
+    # Use Byte because Int8 is not working for some reason
+    exe gdal_rasterize -l "${layer}" -a "${key}" \
         -ot Byte -a_nodata 255 -init 255 -of GTiff \
         -tr 30.0 30.0 -te -2406135.0 218085.0 2308185.0 3222585.0 \
-        -co COMPRESS=LZW "${src}" "${dst_dir}/${key}.tif"
-done
+        -co TILED=YES -co BIGTIFF=YES -co COMPRESS=LZW \
+        "${src}" "${dst}"
+}
 
-
-src_dir=$(python -c "from mtbs_fire_analysis.pipeline.paths import WUI_PATH; print(WUI_PATH)")
-dst_dir=$(python -c "from mtbs_fire_analysis.pipeline.paths import WUI_PATH; print(WUI_PATH)")
-max_dist=$(python -c "from mtbs_fire_analysis.defaults import DEFAULT_PROX_MAX_DIST; print(DEFAULT_PROX_MAX_DIST)")
-for year in "${years[@]}"; do
-    src="${src_dir}/wui_bool_${year}.tif"
-    dst="${dst_dir}/wui_prox_${year}.tif"
+proximity() {
+    src_dir=$(python -c "from mtbs_fire_analysis.pipeline.paths import WUI_PATH; print(WUI_PATH)")
+    dst_dir=$(python -c "from mtbs_fire_analysis.pipeline.paths import WUI_PATH; print(WUI_PATH)")
+    max_dist=$(python -c "from mtbs_fire_analysis.defaults import DEFAULT_PROX_MAX_DIST; print(DEFAULT_PROX_MAX_DIST)")
+    src="${src_dir}/wui_bool_${1}.tif"
+    dst_tmp="${dst_dir}/wui_prox_${1}.tif"
+    dst="${dst_dir}/wui_prox_${1}.tif"
+    rm "${dst}"
     exe gdal_proximity "${src}" "${dst}" -values 1 -distunits GEO \
-        -maxdist "${max_dist}" -ot Int32 -co COMPRESS=LZW -co BIGTIFF=YES
-done
+        -maxdist "${max_dist}" -ot Int32 \
+        -co TILED=YES -co BIGTIFF=YES -co COMPRESS=LZW
+}
+
+
+declare -a years=("1990" "2000" "2010" "2020")
+declare -a flavors=("flag" "class")
+
+echo "-----------------------"
+echo "Rasterizing WUI flavors"
+echo "-----------------------"
+parallel -j3 --tag --verbose --linebuffer --keep-order \
+    rasterize {1} {2} wui ::: "${years[@]}" ::: "${flavors[@]}"
+echo "--------------------"
+echo "Rasterizing WUI bool"
+echo "--------------------"
+parallel --tag --verbose --linebuffer --keep-order \
+    rasterize {} bool wui_bool_{} ::: "${years[@]}"
+
+echo "--------------------"
+echo "Calculating WUI prox"
+echo "--------------------"
+parallel --tag --verbose --linebuffer --keep-order proximity ::: "${years[@]}"
