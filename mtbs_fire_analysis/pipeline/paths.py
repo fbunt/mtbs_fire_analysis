@@ -9,7 +9,10 @@ RESULTS_DIR = Path("/var/mnt/fastdata02/mtbs/results")
 
 PERIMS_DIR = MTBS_ROOT / "mtbs_perims"
 RAW_PERIMS_PATH = PERIMS_DIR / "raw" / "mtbs_perims_DD.shp"
-PERIMS_PATH = PERIMS_DIR / "cleaned" / "mtbs_perims_trimmed.pqt"
+PERIMS_CLEANED_DIR = PERIMS_DIR / "cleaned"
+PERIMS_PATH = PERIMS_CLEANED_DIR / "mtbs_perims_trimmed.gpkg"
+PERIMS_BY_YEAR_PATH = PERIMS_CLEANED_DIR / "mtbs_perims_by_year.gpkg"
+PERIMS_RASTERS_PATH = PERIMS_DIR / "rasters"
 STATES_DIR = MTBS_ROOT / "state_borders"
 RAW_STATES_PATH = STATES_DIR / "raw" / "cb_2018_us_state_5m.shp"
 STATES_PATH = STATES_DIR / "cleaned" / "states.shp"
