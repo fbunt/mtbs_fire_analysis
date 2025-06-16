@@ -22,5 +22,5 @@ rasterize() {
 }
 
 
-parallel --tag --verbose --linebuffer --keep-order \
+parallel -j 4 --tag --verbose --linebuffer --keep-order \
     rasterize {} ::: $(seq 1984 2022)

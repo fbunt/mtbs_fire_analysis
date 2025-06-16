@@ -27,7 +27,6 @@ proximity() {
     dst_dir=$(python -c "from mtbs_fire_analysis.pipeline.paths import WUI_PATH; print(WUI_PATH)")
     max_dist=$(python -c "from mtbs_fire_analysis.defaults import DEFAULT_PROX_MAX_DIST; print(DEFAULT_PROX_MAX_DIST)")
     src="${src_dir}/wui_bool_${1}.tif"
-    dst_tmp="${dst_dir}/wui_prox_${1}.tif"
     dst="${dst_dir}/wui_prox_${1}.tif"
     rm "${dst}"
     exe gdal_proximity "${src}" "${dst}" -values 1 -distunits GEO \
