@@ -8,7 +8,7 @@ rasterize() {
     year=$1
     src=$(python -c "from mtbs_fire_analysis.pipeline.paths import PERIMS_BY_YEAR_PATH; print(PERIMS_BY_YEAR_PATH)")
     dst_dir=$(python -c "from mtbs_fire_analysis.pipeline.paths import PERIMS_RASTERS_PATH; print(PERIMS_RASTERS_PATH)")
-    dst="${dst_dir}/${year}.tif"
+    dst="${dst_dir}/dse_${year}.tif"
 
     if [ ! -f "${dst}" ]; then
         exe gdal_rasterize -l "${year}" -a days_since_epoch \
