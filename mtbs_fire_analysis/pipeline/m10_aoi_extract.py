@@ -15,6 +15,7 @@ from mtbs_fire_analysis.geohasher import GridGeohasher
 from mtbs_fire_analysis.pipeline.paths import (
     ECO_REGIONS_PATH,
     PERIMS_PATH,
+    PERIMS_RASTERS_PATH,
     STATES_PATH,
     get_mtbs_raster_path,
     get_nlcd_raster_path,
@@ -23,19 +24,21 @@ from mtbs_fire_analysis.pipeline.paths import (
 )
 
 
-def get_aoi_geom(aoi_code, crs):
-    geoms = gpd.read_file(STATES_PATH)
-    if aoi_code in ("ALL", "CONUS"):
-        geoms = geoms[geoms.GEOID.astype(int) < 60]
-        if aoi_code == "CONUS":
-            geoms = geoms[~geoms.STUSPS.isin(("AK", "HI"))]
-    else:
-        geoms = geoms[aoi_code == geoms.STUSPS]
-    return gpd.GeoSeries([geoms.geometry.to_crs(crs).union_all()], crs=crs)
+def _format_elapsed_time(elapsed):
+    return f"{int(elapsed // 60)}min, {elapsed % 60:.2f}s"
+
+
+def get_conus_geom(crs):
+    geoms = gpd.read_file(STATES_PATH).to_crs(crs)
+    return geoms[geoms.STUSPS == "CONUS"].geometry
+
+
+def get_mtbs_perims_raster_path(year):
+    return PERIMS_RASTERS_PATH / f"dse_{year}.tif"
 
 
 def get_mtbs_perims_by_year_and_aoi(year, aoi_poly, crs):
-    perims = gpd.read_parquet(PERIMS_PATH).sort_values("Ig_Date")
+    perims = gpd.read_file(PERIMS_PATH).sort_values("Ig_Date")
     perims = perims[perims.Ig_Date.dt.year == year]
     perims = perims.to_crs(crs)
     return perims[perims.intersects(aoi_poly)]
@@ -47,16 +50,18 @@ def get_eco_regions_by_aoi(aoi_poly, crs):
     return eco_regions
 
 
-def parallel_sjoin(points, other, nparts=10):
+def parallel_sjoin(points, other, nparts=10, predicate="within"):
     print(f"Joining {len(points)} x {len(other)}")
     if len(points) > 50_000:
         print("Performing parallel sjoin")
         points = dgpd.from_geopandas(points, npartitions=nparts)
         with ProgressBar():
-            points = points.sjoin(other, how="inner").compute()
+            points = points.sjoin(
+                other, how="inner", predicate=predicate
+            ).compute()
     else:
         print("Performing serial sjoin")
-        points = gpd.sjoin(points, other, how="inner")
+        points = gpd.sjoin(points, other, how="inner", predicate=predicate)
     return points
 
 
@@ -85,10 +90,12 @@ def parallel_join(points, other, nparts=10):
     return points.join(other, on="geohash", how="inner").compute()
 
 
-def polars_join(points, other):
+def polars_join(points, other, how="inner"):
+    if how is None:
+        how = "inner"
     points = pl.from_pandas(points)
     other_points = pl.from_pandas(other)
-    return points.join(other_points, on="geohash").to_pandas()
+    return points.join(other_points, on="geohash", how=how).to_pandas()
 
 
 def _drop_duplicates(points):
@@ -102,11 +109,11 @@ def _drop_duplicates(points):
     points = points.unique(subset=["geohash", "Ig_Date"], keep="last")
     points = points.to_pandas()
     d = time.time() - start
-    print(f"{d // 60}min, {d % 60:.2f}s")
+    print(_format_elapsed_time(d))
     return points
 
 
-def _add_raster(points, raster, name):
+def _add_raster(points, raster, name, how=None):
     print(f"Adding {name}")
     start = time.time()
     other_points = (
@@ -119,19 +126,22 @@ def _add_raster(points, raster, name):
     hasher = GridGeohasher()
     other_points["geohash"] = hasher.geohash(other_points.geometry)
     other_points = other_points.drop("geometry", axis=1)
-    points = polars_join(points, other_points)
+    points = polars_join(points, other_points, how=how)
     d = time.time() - start
-    print(f"{d // 60}min, {d % 60:.2f}s")
+    print(_format_elapsed_time(d))
     return points
 
 
-def _get_initial_points(mtbs_path):
-    mtbs = rts.Raster(str(mtbs_path))
-    points = mtbs.to_points().compute()
-    points = points.reset_index(drop=True)
-    return points.drop(["band", "row", "col"], axis=1).rename(
-        {"value": "bs"}, axis=1
+def _get_initial_points(path):
+    raster = rts.Raster(path)
+    points = (
+        raster.to_points()
+        .drop(["band", "row", "col", "value"], axis=1)
+        .compute()
     )
+    assert isinstance(points, gpd.GeoDataFrame)
+    points = points.reset_index(drop=True)
+    return points
 
 
 def _get_nlcd_raster(nlcd_path, mtbs_path):
@@ -150,6 +160,7 @@ TARGET_POINTS_PER_PARTITION = 1_200_000
 
 
 def _build_dataframe_and_save(
+    perims_raster_path,
     mtbs_path,
     nlcd_path,
     wui_flag_path,
@@ -161,24 +172,13 @@ def _build_dataframe_and_save(
     perims,
     eco_regions,
 ):
-    points = _get_initial_points(mtbs_path)
+    points = _get_initial_points(perims_raster_path)
     print(f"Size initial: {len(points):,}. Loss/gain: {(len(points) - 0):+,}")
-    n = len(points)
-
-    # Drop non-severity pixels
-    points = points[points.bs < 5]
-    print(
-        f"Size after drop(bs < 5): {len(points):,}."
-        f" Loss/gain: {(len(points) - n):+,}"
-    )
     n = len(points)
 
     # Create boxes representing pixels and perform a spatial join with the MTBS
     # fire perimeter vectors
     points["year"] = np.array(year, dtype="uint16")
-    xhalf, yhalf = np.abs(rts.Raster(str(mtbs_path)).resolution) / 2
-    points["cell_box"] = points.geometry.buffer(xhalf, cap_style="square")
-    points = points.set_geometry("cell_box")
     points = parallel_sjoin(points, perims, 20)
     points = points.rename({"index_right": "perim_index"}, axis=1)
     assert "perim_index" in points.columns
@@ -190,9 +190,6 @@ def _build_dataframe_and_save(
     n = len(points)
 
     # Join with eco regions vectors
-    geometry = points["geometry"].rename()
-    points = points.drop(["geometry", "cell_box"], axis=1)
-    points = gpd.GeoDataFrame(points, geometry=geometry)
     points = _join_with_eco_regions(points, eco_regions)
     print(
         f"Size after join(eco_regions): {len(points):,}."
@@ -215,8 +212,22 @@ def _build_dataframe_and_save(
     )
     n = len(points)
 
+    points = _add_raster(points, rts.Raster(mtbs_path), "bs", how="left")
+    print(
+        f"Size after join(bs): {len(points):,}"
+        f" Loss/gain: {(len(points) - n):+,}"
+    )
+    n = len(points)
+    # Drop non-severity pixels
+    # points = points[points.bs < 5]
+    # print(
+    #     f"Size after drop(bs < 5): {len(points):,}."
+    #     f" Loss/gain: {(len(points) - n):+,}"
+    # )
+    # n = len(points)
+
     points = _add_raster(
-        points, _get_nlcd_raster(nlcd_path, mtbs_path), "nlcd"
+        points, _get_nlcd_raster(nlcd_path, perims_raster_path), "nlcd"
     )
     print(
         f"Size after join(nlcd): {len(points):,}"
@@ -224,7 +235,7 @@ def _build_dataframe_and_save(
     )
     n = len(points)
     points = _add_raster(
-        points, _get_wui_raster(wui_flag_path, mtbs_path), "wui_flag"
+        points, _get_wui_raster(wui_flag_path, perims_raster_path), "wui_flag"
     )
     print(
         f"Size after join(wui_flag): {len(points):,}"
@@ -232,7 +243,7 @@ def _build_dataframe_and_save(
     )
     n = len(points)
     points = _add_raster(
-        points, _get_wui_raster(wui_flag_path, mtbs_path), "wui_class"
+        points, _get_wui_raster(wui_flag_path, perims_raster_path), "wui_class"
     )
     print(
         f"Size after join(wui_class): {len(points):,}"
@@ -240,7 +251,7 @@ def _build_dataframe_and_save(
     )
     n = len(points)
     points = _add_raster(
-        points, _get_wui_raster(wui_bool_path, mtbs_path), "wui_bool"
+        points, _get_wui_raster(wui_bool_path, perims_raster_path), "wui_bool"
     )
     print(
         f"Size after join(wui_bool): {len(points):,}"
@@ -249,7 +260,7 @@ def _build_dataframe_and_save(
     n = len(points)
 
     points = _add_raster(
-        points, _get_wui_raster(wui_prox_path, mtbs_path), "wui_prox"
+        points, _get_wui_raster(wui_prox_path, perims_raster_path), "wui_prox"
     )
     print(
         f"Size after join(wui_prox): {len(points):,}"
@@ -263,27 +274,30 @@ def _build_dataframe_and_save(
     points.to_parquet(out_path)
 
 
-def save_raster_to_points(years, aoi_code, crs):
-    aoi_gs = get_aoi_geom(aoi_code, crs)
+def save_raster_to_points(years, crs):
+    aoi_gs = get_conus_geom(crs)
     for year in years:
-        mtbs_path = get_mtbs_raster_path(year, aoi_code)
+        perims_raster_path = get_mtbs_perims_raster_path(year)
+        mtbs_path = get_mtbs_raster_path(year, "CONUS")
         nlcd_path = get_nlcd_raster_path(year)
         wui_flag_path = get_wui_flavor_path(year, "flag")
         wui_class_path = get_wui_flavor_path(year, "class")
         wui_bool_path = get_wui_flavor_path(year, "bool")
         wui_prox_path = get_wui_flavor_path(year, "prox")
-        if not mtbs_path.exists():
+        if not perims_raster_path.exists():
             print(f"---\nNo raster file. Skipping: {year}")
             continue
-        pts_path = get_points_path(year, aoi_code)
+        pts_path = get_points_path(year, "CONUS")
         if pts_path.exists():
             print(f"---\nSkipping: {year}")
             continue
         perims = get_mtbs_perims_by_year_and_aoi(year, aoi_gs.values[0], crs)
         eco_regions = get_eco_regions_by_aoi(aoi_gs.values[0], crs)
         print(f"---\nPreprocessing: {year}")
+        start = time.time()
         with ProgressBar():
             _build_dataframe_and_save(
+                perims_raster_path,
                 mtbs_path,
                 nlcd_path,
                 wui_flag_path,
@@ -296,13 +310,14 @@ def save_raster_to_points(years, aoi_code, crs):
                 eco_regions,
             )
         print("Done")
+        d = time.time() - start
+        print(f"Total time for {year}: {_format_elapsed_time(d)}")
 
 
-def main(min_year, max_year, aoi):
+def main(min_year, max_year):
     years = list(range(min_year, max_year + 1))
-    aoi = aoi
     crs = DEFAULT_CRS
-    save_raster_to_points(years, aoi, crs)
+    save_raster_to_points(years, crs)
 
 
 DESC = """
@@ -327,15 +342,10 @@ def _get_parser():
         type=int,
         help="Maximum year to pull data from",
     )
-    p.add_argument(
-        "aoi",
-        type=str,
-        help="The area of interest (AOI) code to pull points from",
-    )
     return p
 
 
 if __name__ == "__main__":
     args = _get_parser().parse_args()
     assert args.min_year <= args.max_year
-    main(args.min_year, args.max_year, args.aoi)
+    main(args.min_year, args.max_year)
