@@ -4,7 +4,6 @@ from pathlib import Path
 import dask
 import dask.dataframe as dd
 from dask.distributed import Client, LocalCluster
-from paths import get_points_combined_path, get_points_path
 
 # Try to keep dask from leaking memory
 dask.config.set(
