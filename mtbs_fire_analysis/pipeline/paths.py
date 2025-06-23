@@ -28,6 +28,8 @@ RAW_WUI = WUI_DIR / "raw" / "CONUS_WUI_block_1990_2020_change_v4.gdb"
 INTERMEDIATE_WUI = WUI_DIR / "intermediate" / "wui.gpkg"
 WUI_PATH = WUI_DIR / "cleaned"
 
+ST_PATH = MTBS_ROOT / "st"
+
 
 # --- Formats ---
 MTBS_TIF_FMT = "mtbs_{aoi}_{year}.tif"
