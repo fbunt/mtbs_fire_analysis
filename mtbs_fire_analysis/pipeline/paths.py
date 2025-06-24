@@ -1,17 +1,13 @@
 from pathlib import Path
 
-MAIN_FOLDER_ALIAS = Path("/fire_analysis_data")
+MAIN_FOLDER_ALIAS = Path("/run/media/fire_analysis")
 
 MTBS_ROOT = MAIN_FOLDER_ALIAS / "data"
 MTBS_RASTER_DIR = MTBS_ROOT / "mtbs_bs_rasters"
 RAW_RASTER_DATA_DIR = MTBS_RASTER_DIR / "raw"
 CLEANED_RASTER_DATA_DIR = MTBS_RASTER_DIR / "cleaned"
-ROOT_TMP_DIR = (
-    MAIN_FOLDER_ALIAS / "data_tmp"
-)
-RESULTS_DIR = (
-    MAIN_FOLDER_ALIAS / "data" / "results"
-)
+ROOT_TMP_DIR = MAIN_FOLDER_ALIAS / "data_tmp"
+RESULTS_DIR = MAIN_FOLDER_ALIAS / "data" / "results"
 CACHE_DIR = MAIN_FOLDER_ALIAS / "data" / "cache"
 
 PERIMS_DIR = MTBS_ROOT / "mtbs_perims"
