@@ -100,7 +100,7 @@ def calc_dse_max(start_year, end_year):
     _protected_save_with_cleanup(dse_max, out_path)
 
 
-def st_chunk(x, end_year, start_year):
+def st_chunk(x, start_year, end_year):
     # x is the number of days since linux epoch
     mask = x == -1
     # Convert to date
@@ -109,7 +109,7 @@ def st_chunk(x, end_year, start_year):
     x = np.datetime64(f"{end_year}-01-01") - x
     # Convert delta to years
     x = x.astype("int16") * np.float32(1 / 365)
-    x[mask] = end_year - 1984
+    x[mask] = end_year - start_year
     return x
 
 
@@ -120,8 +120,8 @@ def calc_st_for_end_year(end_year):
         st_chunk,
         dtype="float32",
         meta=np.array((), dtype="float32"),
-        end_year=end_year,
         start_year=1984,
+        end_year=end_year,
     )
     st = rts.data_to_raster_like(data, like=dse_raster, nv=None)
     out_path = ST_PATH / f"st_{end_year}.tif"
