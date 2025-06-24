@@ -14,3 +14,9 @@ There are a lot of event histories with <10 pixels. 200k of them. Spot checking 
 So currently seems fine, but we might want to develop a process to quickly inspect things in QGIS, so that we can double check 50 of them
 
 
+Need to Merge HLH dist implementation back into distributions. Ideally also:
+    Add a registry for the distribution implementations
+    Add interfaces for the general distribution class, and a sub-class for scipy distributions to enable quickly adding other distributions that are already in scipy
+    Later:
+        Consider how things will be abstracted when we want to add covariates, is it possible with proportional hazard, or accelerated failure time or accelerated hazard to have the distribution simply take some transformation arguments so the covariates and their parameters can be abstracted from the distributions?
+        
