@@ -28,8 +28,11 @@ def main():
         with ProgressBar():
             r.save(outpath, tiled=True)
     # Duplicate 1985 to get an NLCD for 1984
-    print("Copying 1985 to 1984")
-    shutil.copy(path1985, path1984)
+    if not path1984.exists():
+        print("Copying 1985 to 1984")
+        shutil.copy(path1985, path1984)
+    else:
+        print("Skipping copy of 1985 to 1984. Already exists.")
 
 
 if __name__ == "__main__":
