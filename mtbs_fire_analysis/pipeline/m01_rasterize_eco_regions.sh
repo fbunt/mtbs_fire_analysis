@@ -16,15 +16,15 @@ rasterize_eco() {
     case $eco_level in
         1)
             out_type="Int8"
-            nodate="-1"
+            nodata="-1"
             ;;
         2)
             out_type="Byte"
-            nodate="255"
+            nodata="255"
             ;;
         3)
             out_type="Int16"
-            nodate="-1"
+            nodata="-1"
             ;;
     esac
 
