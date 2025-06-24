@@ -11,14 +11,9 @@ rasterize_eco() {
     dst_dir=$(python -c "from mtbs_fire_analysis.pipeline.paths import ECO_REGIONS_RASTER_PATH; print(ECO_REGIONS_RASTER_PATH)")
     dst="${dst_dir}/${name}.tif"
 
-    out_type="Byte"
-    nodata="-1"
     case $eco_level in
-        1)
-            out_type="Int8"
-            nodata="-1"
-            ;;
-        2)
+        # Int8 is not working for some reason so use Byte for both
+        1 | 2)
             out_type="Byte"
             nodata="255"
             ;;
