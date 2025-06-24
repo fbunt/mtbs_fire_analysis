@@ -2,16 +2,16 @@ from pathlib import Path
 
 MAIN_FOLDER_ALIAS = Path("/fire_analysis_data")
 
-MTBS_ROOT = MAIN_FOLDER_ALIAS / "data"  # Path("/var/mnt/fastdata02/mtbs")
+MTBS_ROOT = MAIN_FOLDER_ALIAS / "data"
 MTBS_RASTER_DIR = MTBS_ROOT / "mtbs_bs_rasters"
 RAW_RASTER_DATA_DIR = MTBS_RASTER_DIR / "raw"
 CLEANED_RASTER_DATA_DIR = MTBS_RASTER_DIR / "cleaned"
 ROOT_TMP_DIR = (
     MAIN_FOLDER_ALIAS / "data_tmp"
-)  # Path("/var/mnt/fastdata01/fire_tmp/")
+)
 RESULTS_DIR = (
     MAIN_FOLDER_ALIAS / "data" / "results"
-)  # Path("/var/mnt/fastdata02/mtbs/results")
+)
 CACHE_DIR = MAIN_FOLDER_ALIAS / "data" / "cache"
 
 PERIMS_DIR = MTBS_ROOT / "mtbs_perims"
