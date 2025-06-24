@@ -34,6 +34,8 @@ dependencies = [
   "tqdm",
   "xarray",
   "lifelines>=0.30.0",
+  "raster-tools>=0.9.8",
+  "nbconvert>=7.16.6",
 ]
 
 
