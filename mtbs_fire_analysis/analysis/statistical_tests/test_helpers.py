@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import numpy as np
 
 import mtbs_fire_analysis.analysis.distributions as cd
@@ -38,7 +36,9 @@ def create_sample_data(
     """
 
     # Count total time taken
-    remaining_times = (left_censoring_time + time_interval) * np.ones(num_pixels)
+    remaining_times = (left_censoring_time + time_interval) * np.ones(
+        num_pixels
+    )
     last_times = np.zeros(num_pixels)
     expand_samples = np.zeros(num_pixels)
 
@@ -62,7 +62,9 @@ def create_sample_data(
         entered_window = remaining_times - time_interval < left_censoring_time
         # If the sample is in the window, we can add it to the dts
 
-        new_dts = expand_samples[~finished & remaining & entered_window].tolist()
+        new_dts = expand_samples[
+            ~finished & remaining & entered_window
+        ].tolist()
         dts.extend(new_dts)
         # Find remaining pixels
         remaining = remaining_times > 0.0
@@ -71,6 +73,7 @@ def create_sample_data(
         last_times = last_times[last_times < time_interval]
 
     return np.array(dts), last_times
+
 
 def create_sample_data_all(
     num_pixels: int,
@@ -97,13 +100,13 @@ def create_sample_data_all(
     rng = np.random.default_rng() if rng is None else rng
 
     # Window bounds
-    t_open  = start_up_time
+    t_open = start_up_time
     t_close = start_up_time + time_interval
 
     # Pixel-wise state
-    t_prev  = np.zeros(num_pixels)
-    alive   = np.ones(num_pixels, bool)
-    seen    = np.zeros(num_pixels, bool)
+    t_prev = np.zeros(num_pixels)
+    alive = np.ones(num_pixels, bool)
+    seen = np.zeros(num_pixels, bool)
     last_ev = np.full(num_pixels, np.nan)
 
     # Event buffers
@@ -111,12 +114,12 @@ def create_sample_data_all(
 
     while alive.any():
         idx = np.nonzero(alive)[0]
-        dt  = truth.rvs(size=len(idx), rng=rng)
+        dt = truth.rvs(size=len(idx), rng=rng)
         t_new = t_prev[idx] + dt
 
         before = t_new < t_open
         inside = (t_new >= t_open) & (t_new <= t_close)
-        after  = t_new > t_close
+        after = t_new > t_close
 
         # events before window
         if before.any():
@@ -125,27 +128,27 @@ def create_sample_data_all(
         # events inside window
         if inside.any():
             iwin = idx[inside]
-            tn   = t_new[inside]
+            tn = t_new[inside]
 
             first = ~seen[iwin]
-            if first.any():                      # forward recurrence (ut)
+            if first.any():  # forward recurrence (ut)
                 uts.extend(tn[first] - t_open)
                 seen[iwin[first]] = True
 
-            repeat = ~first                     # fully observed (dt)
+            repeat = ~first  # fully observed (dt)
             if repeat.any():
                 dts.extend(tn[repeat] - last_ev[iwin[repeat]])
 
             last_ev[iwin] = tn
-            t_prev[iwin]  = tn
+            t_prev[iwin] = tn
 
         # events after window
         if after.any():
             iaft = idx[after]
             has_ev = seen[iaft]
-            if has_ev.any():                    # right-censor (ct)
+            if has_ev.any():  # right-censor (ct)
                 cts.extend(t_close - last_ev[iaft[has_ev]])
-            alive[iaft] = False                 # simulation done for pixel
+            alive[iaft] = False  # simulation done for pixel
 
     # -------------------------------------------------------------------------
     # Helper for rounding / collapsing duplicates
@@ -168,10 +171,14 @@ def create_sample_data_all(
     n0t, n0_count = _collapse([time_interval] * n0, round_to_nearest)
 
     return (
-        dts, dt_count,
-        uts, ut_count,
-        cts, ct_count,
-        n0t, n0_count,
+        dts,
+        dt_count,
+        uts,
+        ut_count,
+        cts,
+        ct_count,
+        n0t,
+        n0_count,
     )
 
 
@@ -187,9 +194,9 @@ def create_sample_data_all_old(
     Simulate fire-history data and return the four disjoint observation types
     needed for the likelihood:
 
-    • dt   – fully-observed inter-fire intervals **inside** the window  
-    • ut   – forward-recurrence intervals from the window start to first fire  
-    • ct   – right-censor times from last fire to the window end  
+    • dt   – fully-observed inter-fire intervals **inside** the window
+    • ut   – forward-recurrence intervals from the window start to first fire
+    • ct   – right-censor times from last fire to the window end
     • n0   – number of pixels with *no* fire in the window
 
     Parameters
@@ -216,6 +223,7 @@ def create_sample_data_all_old(
     n0            : int
         Number of pixels with zero events inside the window.
     """
+
     # ------------------------------------------------------------------ helpers
     def _aggregate(values, step):
         """Round to nearest *step* and collapse duplicates."""
@@ -274,15 +282,19 @@ def create_sample_data_all_old(
     uts, ut_count = _aggregate(uts, round_to_nearest)
     cts, ct_count = _aggregate(cts, round_to_nearest)
 
-    return dts, dt_count, uts, ut_count, cts, ct_count, np.array([time_interval]), np.array([n0])
+    return (
+        dts,
+        dt_count,
+        uts,
+        ut_count,
+        cts,
+        ct_count,
+        np.array([time_interval]),
+        np.array([n0]),
+    )
 
 
-def evaluate_fits(
-    dts,
-    last_times,
-    fits,
-    names = None
-):
+def evaluate_fits(dts, last_times, fits, names=None):
     """
     Outputs fitted params, neg log likelihood in print statements.
 
@@ -307,6 +319,7 @@ def evaluate_fits(
         print(f"{name} neg log likelihood values with censoring: ")
         print(fit.neg_log_likelihood(dts, survival_data=last_times))
 
+
 def evaluate_fits_all(
     fits,
     dts,
@@ -316,7 +329,7 @@ def evaluate_fits_all(
     uts=None,
     ut_counts=None,
     num_empty=None,
-    names = None,
+    names=None,
 ):
     """
     Outputs fitted params, neg log likelihood in print statements.
@@ -341,10 +354,14 @@ def evaluate_fits_all(
         print(fit.params)
         print(f"Return interval: {fit.mean()}")
         print(f"{name} neg log likelihood values with censoring: ")
-        print(fit.neg_log_likelihood(dts, dt_counts, cts, ct_counts, uts, ut_counts, num_empty))
+        print(
+            fit.neg_log_likelihood(
+                dts, dt_counts, cts, ct_counts, uts, ut_counts, num_empty
+            )
+        )
 
 
-def output_plots(dts,last_times, fits, folder, names=None):
+def output_plots(dts, last_times, fits, folder, names=None):
     """
     Outputs plots of the fitted distributions.
 
@@ -364,7 +381,7 @@ def output_plots(dts,last_times, fits, folder, names=None):
         names = [f"Fit {i}" for i in range(len(fits))]
 
     for fit, name in zip(fits, names, strict=True):
-        #cd.plot_fit(fit, dts, last_times, out_dir / (prefix+f"{name}Fit.png"))
+        # cd.plot_fit(fit, dts, last_times, out_dir / (prefix+f"{name}Fit.png"))
         cd.plot_fit(
             fit,
             dts,

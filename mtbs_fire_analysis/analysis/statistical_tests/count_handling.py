@@ -2,12 +2,14 @@
 To do description
 """
 
+from pathlib import Path
+
+import numpy as np
+
 import mtbs_fire_analysis.analysis.statistical_tests.test_helpers as th
 from mtbs_fire_analysis.analysis.distributions import (
     HalfLifeHazardDistribution as HLHD,
 )
-from pathlib import Path
-import numpy as np
 
 num_pixels = 100_000
 time_interval = 38
@@ -36,7 +38,9 @@ st_locs = st_bins[:-1] + 0.05
 fitter = HLHD(hazard_inf=0.15, half_life=20)
 fitter.fit(dts, survival_data=sts)
 fitter_counts = HLHD(hazard_inf=0.15, half_life=20)
-fitter_counts.fit(dt_locs, dts_binned, survival_data=st_locs, survival_counts=sts_binned)
+fitter_counts.fit(
+    dt_locs, dts_binned, survival_data=st_locs, survival_counts=sts_binned
+)
 
 fits = [
     truth,
@@ -50,25 +54,15 @@ names = [
     "Binned Fit",
 ]
 
-th.evaluate_fits(
-    dts,
-    sts,
-    fits,
-    names
-)
+th.evaluate_fits(dts, sts, fits, names)
 
-out_dir = (Path("mtbs_fire_analysis")
-           / "analysis"
-           / "statistical_tests"
-           / "test_outputs"
-           / "count_handling"
+out_dir = (
+    Path("mtbs_fire_analysis")
+    / "analysis"
+    / "statistical_tests"
+    / "test_outputs"
+    / "count_handling"
 )
 out_dir.mkdir(parents=False, exist_ok=True)
 
-th.output_plots(
-    dts,
-    sts,
-    fits,
-    out_dir,
-    names
-)
+th.output_plots(dts, sts, fits, out_dir, names)

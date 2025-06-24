@@ -1,14 +1,13 @@
 # %%
-from pathlib import Path
 import pickle
-import polars as pl
+from pathlib import Path
+
 import numpy as np
+import polars as pl
 
 from mtbs_fire_analysis.analysis.mining import (
-    build_dts_df,
     build_survival_times,
 )
-
 
 out_dir = Path("mtbs_fire_analysis/outputs/HLH_Fits")
 
@@ -34,10 +33,17 @@ if refresh:
 else:
     sts = pl.scan_parquet(cache_path / "sts.parquet").collect()
 
-unique_sts = np.concatenate([
-    sts.select(pl.col("st")).unique().sort(pl.col("st")).sort("st").to_numpy().flatten(),
-    np.array([38])
-])
+unique_sts = np.concatenate(
+    [
+        sts.select(pl.col("st"))
+        .unique()
+        .sort(pl.col("st"))
+        .sort("st")
+        .to_numpy()
+        .flatten(),
+        np.array([38]),
+    ]
+)
 
 
 # Build a polars dataframe that is a map from eco, nlcd, and dt to the fitter.hazard(dt)
@@ -46,9 +52,9 @@ records = []
 
 for name in outputs:
     output = outputs[name]
-    for eco in output['eco']:
-        for nlcd in output['nlcd']:
-            hazards = output['fitter'].hazard(unique_sts)
+    for eco in output["eco"]:
+        for nlcd in output["nlcd"]:
+            hazards = output["fitter"].hazard(unique_sts)
             records.extend(
                 [
                     {

@@ -7,7 +7,6 @@ import numpy as np
 import polars as pl
 import raster_tools as rts
 from dask.diagnostics import ProgressBar
-from dask.distributed import Client, LocalCluster
 
 from mtbs_fire_analysis.geohasher import GridGeohasher
 from mtbs_fire_analysis.pipeline.paths import get_mtbs_raster_path

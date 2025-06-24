@@ -21,12 +21,13 @@ Highlights
 from typing import Sequence
 
 import numpy as np
-from scipy.optimize import minimize
-from scipy.special import gammainc, gammaln, digamma, lambertw
 from scipy.integrate import quad
+from scipy.optimize import minimize
+from scipy.special import digamma, gammainc, gammaln, lambertw
 
 LN2 = np.log(2.0)
 _EPS = 1e-12  # numeric safety guard for logs / divisions
+
 
 # ---------------------------------------------------------------------------
 #  Distribution definition
@@ -96,9 +97,7 @@ class HalfLifeHazardDistribution:
         """μ = E[T] (finite for all positive parameters, evaluated stably)."""
         k = self.hazard_inf / self.lam
         p = gammainc(k, k)  # regularised lower incomplete gamma P(k,k)
-        log_mu = (
-            k - k * np.log(k) + gammaln(k) + np.log(p) - np.log(self.lam)
-        )
+        log_mu = k - k * np.log(k) + gammaln(k) + np.log(p) - np.log(self.lam)
         return np.exp(log_mu)
 
     # --------------------- tail survival integral --------------------------
@@ -111,14 +110,15 @@ class HalfLifeHazardDistribution:
         log_gamma_lower = np.log(np.maximum(gammainc(k, x), _EPS)) + gammaln(k)
         return np.exp(log_prefac + log_gamma_lower)
 
-
     # --------------------- expected hazard rate for empty windows ----------
     # This is E[ h(T) | T ≥ W ] = ∫_W^∞ h(t) S(t) dt / ∫_W^∞ S(t) dt
-    def expected_hazard_ge(self, W: float,
-                       rel_tol: float = 1e-9,
-                       abs_tol: float = 0.0,
-                       large_W_ratio: float = 8.0
-                       ) -> float:
+    def expected_hazard_ge(
+        self,
+        W: float,
+        rel_tol: float = 1e-9,
+        abs_tol: float = 0.0,
+        large_W_ratio: float = 8.0,
+    ) -> float:
         """
         Return E[ h(T) | T ≥ W ]   (same time-units as the model).
         For use in calculating the hazard rate for empty windows.
@@ -146,26 +146,31 @@ class HalfLifeHazardDistribution:
             return float(self.hazard_inf)
 
         # -------------------------------- log-integrand ----------------------
-        h_inf, lam = self.hazard_inf, self.lam     # local speed-ups
+        h_inf, lam = self.hazard_inf, self.lam  # local speed-ups
         ln_h_inf = np.log(h_inf)
-        _EPS = 1e-300                               # guard for exp()
+        _EPS = 1e-300  # guard for exp()
 
         def _log_integrand(t):
             """log[ h(t)**2 · S(t) ]  evaluated stably."""
             e = np.exp(-lam * t)
-            one_minus_e = -np.expm1(-lam * t)       # 1 − e^{−λt}
+            one_minus_e = -np.expm1(-lam * t)  # 1 − e^{−λt}
             log_h = ln_h_inf + np.log(one_minus_e + _EPS)
             cum_H = h_inf * (t - one_minus_e / lam)
             return 2.0 * log_h - cum_H
 
         # -------------------------------- numerator --------------------------
-        num = quad(lambda x: np.exp(_log_integrand(x)),
-                W, np.inf, limit=200,
-                epsrel=rel_tol, epsabs=abs_tol)[0]
+        num = quad(
+            lambda x: np.exp(_log_integrand(x)),
+            W,
+            np.inf,
+            limit=200,
+            epsrel=rel_tol,
+            epsabs=abs_tol,
+        )[0]
 
         # -------------------------------- denominator ------------------------
-        log_S_W = -self.cum_hazard(W)               # already stable
-        log_num  = np.log(num + _EPS)
+        log_S_W = -self.cum_hazard(W)  # already stable
+        log_num = np.log(num + _EPS)
 
         return float(np.exp(log_num - log_S_W))
 
@@ -180,7 +185,12 @@ class HalfLifeHazardDistribution:
         return z / self.lam
 
     # ------------------------ parameter reset ------------------------------
-    def reset_params(self, *, hazard_inf: float | None = None, half_life: float | None = None):
+    def reset_params(
+        self,
+        *,
+        hazard_inf: float | None = None,
+        half_life: float | None = None,
+    ):
         """Reset parameters in‑place (handy for manual tuning / warm starts)."""
         if hazard_inf is not None:
             if hazard_inf <= 0:
@@ -215,7 +225,9 @@ class HalfLifeHazardDistribution:
 
         # log Γ_lower(k, x) = log[ Γ(k) · P(k,x) ]
         #   = log P(k,x) + log Γ(k)
-        log_gamma_lower = np.log(np.maximum(gammainc(k, x), _EPS)) + log_gamma_k
+        log_gamma_lower = (
+            np.log(np.maximum(gammainc(k, x), _EPS)) + log_gamma_k
+        )
 
         # term_common  =  exp( (k-1)·log x  –  x  –  log Γ_lower )
         log_term_common = (k - 1.0) * np.log(x) - x - log_gamma_lower
@@ -241,7 +253,9 @@ class HalfLifeHazardDistribution:
         empty_counts: np.ndarray | None,
     ) -> float:
         """Return −log L for exp(theta_log)."""
-        h_inf, tau, lam = HalfLifeHazardDistribution._theta_to_params(theta_log)
+        h_inf, tau, lam = HalfLifeHazardDistribution._theta_to_params(
+            theta_log
+        )
         dist = HalfLifeHazardDistribution(h_inf, tau)
         mu = dist.mean()
 
@@ -249,20 +263,36 @@ class HalfLifeHazardDistribution:
         # -- exact events ---------------------------------------------------
         if data.size:
             log_pdf = dist.log_pdf(data)
-            nll -= np.dot(data_counts, log_pdf) if data_counts is not None else log_pdf.sum()
+            nll -= (
+                np.dot(data_counts, log_pdf)
+                if data_counts is not None
+                else log_pdf.sum()
+            )
         # -- right‑censored --------------------------------------------------
         if survival_data is not None and survival_data.size:
             log_surv = dist.log_survival(survival_data)
-            nll -= np.dot(survival_counts, log_surv) if survival_counts is not None else log_surv.sum()
+            nll -= (
+                np.dot(survival_counts, log_surv)
+                if survival_counts is not None
+                else log_surv.sum()
+            )
         # -- forward‑recurrence gaps ---------------------------------------
         if initial_gaps is not None and initial_gaps.size:
             log_term = dist.log_survival(initial_gaps) - np.log(mu)
-            nll -= np.dot(initial_counts, log_term) if initial_counts is not None else log_term.sum()
+            nll -= (
+                np.dot(initial_counts, log_term)
+                if initial_counts is not None
+                else log_term.sum()
+            )
         # -- empty windows --------------------------------------------------
         if empty_windows is not None and empty_windows.size:
             tail = dist.tail_survival(empty_windows)
             log_term = np.log(tail) - np.log(mu)
-            nll -= np.dot(empty_counts, log_term) if empty_counts is not None else log_term.sum()
+            nll -= (
+                np.dot(empty_counts, log_term)
+                if empty_counts is not None
+                else log_term.sum()
+            )
 
         return float(nll)
 
@@ -283,7 +313,9 @@ class HalfLifeHazardDistribution:
     ) -> np.ndarray:
         """Return ∇_{log p}(−log L)."""
         # Unpack parameters
-        h_inf, tau, lam = HalfLifeHazardDistribution._theta_to_params(theta_log)
+        h_inf, tau, lam = HalfLifeHazardDistribution._theta_to_params(
+            theta_log
+        )
         k = h_inf / lam
 
         # Mean and its derivatives ----------------------------------------
@@ -341,13 +373,17 @@ class HalfLifeHazardDistribution:
         if empty_windows is not None and empty_windows.size:
             W = empty_windows
             x_W = k * np.exp(-lam * W)
-            log_gamma_lower_x, term_x = HalfLifeHazardDistribution._common_terms(k, x_W)
+            log_gamma_lower_x, term_x = (
+                HalfLifeHazardDistribution._common_terms(k, x_W)
+            )
             theta_x = digamma(k) - np.log(k) + term_x  # Θ(k,x_W)
 
             dlogT_dh = (1.0 / lam) * theta_x
 
             # dlogT/dλ  (see derivation)
-            dx_dlam = x_W * (-h_inf / (lam**2 * k) - W)  # derivative of x_W wrt λ
+            dx_dlam = x_W * (
+                -h_inf / (lam**2 * k) - W
+            )  # derivative of x_W wrt λ
             dlogT_dl = (
                 (-h_inf / lam**2) * theta_x + dx_dlam * term_x - 1.0 / lam
             )
@@ -358,7 +394,9 @@ class HalfLifeHazardDistribution:
 
         # Chain rule to log‑params -----------------------------------------
         grad_log_h = h_inf * grad_h
-        grad_log_tau = -lam * grad_l  # ∂log τ = τ ∂τ, and ∂τ/∂λ = -τ²/LN2 = -τ² λ / LN2 τ? but simpler −λ
+        grad_log_tau = (
+            -lam * grad_l
+        )  # ∂log τ = τ ∂τ, and ∂τ/∂λ = -τ²/LN2 = -τ² λ / LN2 τ? but simpler −λ
         return np.array([grad_log_h, grad_log_tau])
 
     # ---------------------------------------------------------------------
@@ -377,9 +415,15 @@ class HalfLifeHazardDistribution:
     ) -> float:
         """Compute −log L for the provided observations."""
         data = np.asarray(data, float)
-        survival_data = None if survival_data is None else np.asarray(survival_data, float)
-        initial_gaps = None if initial_gaps is None else np.asarray(initial_gaps, float)
-        empty_windows = None if empty_windows is None else np.asarray(empty_windows, float)
+        survival_data = (
+            None if survival_data is None else np.asarray(survival_data, float)
+        )
+        initial_gaps = (
+            None if initial_gaps is None else np.asarray(initial_gaps, float)
+        )
+        empty_windows = (
+            None if empty_windows is None else np.asarray(empty_windows, float)
+        )
 
         return self._neg_log_likelihood_for_params(
             np.log([self.hazard_inf, self.half_life]),
@@ -418,12 +462,21 @@ class HalfLifeHazardDistribution:
           you change parameters and haven’t updated the derivative code yet).
         """
         data = np.asarray(data, float)
-        survival_data = None if survival_data is None else np.asarray(survival_data, float)
-        initial_gaps = None if initial_gaps is None else np.asarray(initial_gaps, float)
-        empty_windows = None if empty_windows is None else np.asarray(empty_windows, float)
+        survival_data = (
+            None if survival_data is None else np.asarray(survival_data, float)
+        )
+        initial_gaps = (
+            None if initial_gaps is None else np.asarray(initial_gaps, float)
+        )
+        empty_windows = (
+            None if empty_windows is None else np.asarray(empty_windows, float)
+        )
 
         theta0 = np.log([self.hazard_inf, self.half_life])
-        bounds_log = ((np.log(1e-12), np.log(10.0)), (np.log(1e-5), np.log(1e5)))
+        bounds_log = (
+            (np.log(1e-12), np.log(10.0)),
+            (np.log(1e-5), np.log(1e5)),
+        )
 
         # jac = (
         #     self._grad_neg_log_likelihood_for_params
@@ -444,7 +497,7 @@ class HalfLifeHazardDistribution:
                 empty_counts,
             ),
             method=method,
-            #jac=jac,
+            # jac=jac,
             bounds=bounds_log,
             options={} if options is None else options,
         )
@@ -465,4 +518,3 @@ class HalfLifeHazardDistribution:
         self.hazard_inf, tau = np.exp(res.x)
         self.lam = LN2 / tau
         return self
-

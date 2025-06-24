@@ -13,11 +13,12 @@ At least for data similar to that generated, it seems we don't need to account
 for left censoring in the fitting process.
 """
 
+from pathlib import Path
+
 import mtbs_fire_analysis.analysis.statistical_tests.test_helpers as th
 from mtbs_fire_analysis.analysis.distributions import (
     HalfLifeHazardDistribution as HLHD,
 )
-from pathlib import Path
 
 num_pixels = 100_000
 time_interval = 38
@@ -53,11 +54,12 @@ th.evaluate_fits(
     names=["Truth", "No Left Censoring", "Left Censoring"],
 )
 
-out_dir = (Path("mtbs_fire_analysis")
-           / "analysis"
-           / "statistical_tests"
-           / "test_outputs"
-           / "left_sensoring"
+out_dir = (
+    Path("mtbs_fire_analysis")
+    / "analysis"
+    / "statistical_tests"
+    / "test_outputs"
+    / "left_sensoring"
 )
 out_dir.mkdir(parents=False, exist_ok=True)
 

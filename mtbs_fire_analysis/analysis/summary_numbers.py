@@ -1,7 +1,7 @@
+from pathlib import Path
+
 import polars as pl
 import yaml
-
-from pathlib import Path
 
 from mtbs_fire_analysis.analysis.utils import (
     get_dt_polygons,
@@ -47,10 +47,14 @@ for config in configs:
     )
     num_sts = sub_st_polygons.get_column("Pixel Count").sum()
     num_st_polygons = sub_st_polygons.shape[0]
-    num_pixels_total = pixel_counts.filter(
-        (pl.col("eco").is_in(config["eco"]))
-        & (pl.col("nlcd").is_in(config["nlcd"]))
-    ).get_column("count").sum()
+    num_pixels_total = (
+        pixel_counts.filter(
+            (pl.col("eco").is_in(config["eco"]))
+            & (pl.col("nlcd").is_in(config["nlcd"]))
+        )
+        .get_column("count")
+        .sum()
+    )
     records.extend(
         [
             {

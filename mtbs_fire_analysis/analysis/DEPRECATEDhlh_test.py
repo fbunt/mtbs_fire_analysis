@@ -84,7 +84,11 @@ print(fitter.neg_log_likelihood(dts))
 print("Fitted parameters with censoring: ")
 print(fitter_censor.neg_log_likelihood(dts, survival_data=last_times))
 print("Fitted parameters with censoring (discard): ")
-print(fitter_censor_discard.neg_log_likelihood(dts, survival_data=last_times[last_times<35]))
+print(
+    fitter_censor_discard.neg_log_likelihood(
+        dts, survival_data=last_times[last_times < 35]
+    )
+)
 
 print("Neg log likelihood values with censoring: ")
 print("Original params: ")
@@ -94,15 +98,17 @@ print(fitter.neg_log_likelihood(dts, survival_data=last_times))
 print("Fitted parameters with censoring: ")
 print(fitter_censor.neg_log_likelihood(dts, survival_data=last_times))
 print("Fitted parameters with censoring (discard): ")
-print(fitter_censor_discard.neg_log_likelihood(dts, survival_data=last_times[last_times<35]))
+print(
+    fitter_censor_discard.neg_log_likelihood(
+        dts, survival_data=last_times[last_times < 35]
+    )
+)
 
 out_dir = Path("mtbs_fire_analysis") / "Outputs" / "BasicHLHDFit"
 out_dir.mkdir(parents=True, exist_ok=True)
 
 cd.plot_fit(fitter, dts, last_times, out_dir / "HLHDFitNoCensor.png")
-cd.plot_fit(
-    fitter_censor, dts, last_times, out_dir / "HLHDFitCensor.png"
-)
+cd.plot_fit(fitter_censor, dts, last_times, out_dir / "HLHDFitCensor.png")
 cd.plot_fit(truth, dts, last_times, out_dir / "HLHDFitActual.png")
 cd.plot_fit(
     fitter_censor_discard,

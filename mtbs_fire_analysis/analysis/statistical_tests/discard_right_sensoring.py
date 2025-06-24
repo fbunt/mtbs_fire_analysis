@@ -16,11 +16,12 @@ This is the basis for requiring the sensoring data for all pixels
 even when they don't have any fire events in the interval.
 """
 
+from pathlib import Path
+
 import mtbs_fire_analysis.analysis.statistical_tests.test_helpers as th
 from mtbs_fire_analysis.analysis.distributions import (
     HalfLifeHazardDistribution as HLHD,
 )
-from pathlib import Path
 
 num_pixels = 100_000
 time_interval = 38
@@ -55,25 +56,15 @@ names = [
     "Discarded Right Sensoring",
 ]
 
-th.evaluate_fits(
-    dts,
-    sts,
-    fits,
-    names
-)
+th.evaluate_fits(dts, sts, fits, names)
 
-out_dir = (Path("mtbs_fire_analysis")
-           / "analysis"
-           / "statistical_tests"
-           / "test_outputs"
-           / "discarded_right_sensoring"
+out_dir = (
+    Path("mtbs_fire_analysis")
+    / "analysis"
+    / "statistical_tests"
+    / "test_outputs"
+    / "discarded_right_sensoring"
 )
 out_dir.mkdir(parents=False, exist_ok=True)
 
-th.output_plots(
-    dts,
-    sts,
-    fits,
-    out_dir,
-    names
-)
+th.output_plots(dts, sts, fits, out_dir, names)

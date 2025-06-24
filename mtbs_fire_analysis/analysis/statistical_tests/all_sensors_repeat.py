@@ -1,5 +1,3 @@
-# %%
-
 import numpy as np
 import pandas as pd
 
@@ -20,7 +18,7 @@ def run_hlh_simulation(
     random_seed: int | None = None,
 ):
     """
-    Run HLHD fitting simulation and return summary DataFrame and all fit outputs.
+    Run Repeated HLHD fitting simulation and return summary DataFrame.
 
     Returns
     -------
@@ -73,7 +71,6 @@ def run_hlh_simulation(
                 **{prop: 0 for prop in properties if prop != "mean"},
             }
         )
-        # [0, 0, num_pixels * time_interval / (dt_counts.sum() + ct_counts.sum())]+[0] * (len(properties) - 1))
 
         # dt_only
         try:
@@ -134,7 +131,6 @@ def run_hlh_simulation(
             fail_counts["dtctutet"] += 1
 
     # Add truth
-    # fit_outs["truth"] = [[truth.hazard_inf, truth.half_life, truth.mean()] for _ in range(iterations)]
     fit_outs["truth"] = [truth.params]
     fit_outs["truth"][0].update(
         {

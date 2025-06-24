@@ -1,6 +1,5 @@
 import dask
 import dask_geopandas as dgpd
-import geopandas as gpd
 import numpy as np
 import pandas as pd
 import tqdm

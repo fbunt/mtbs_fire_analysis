@@ -1,14 +1,6 @@
-import polars as pl
-import yaml
-
 from pathlib import Path
 
-from mtbs_fire_analysis.analysis.utils import (
-    get_dt_polygons,
-    get_dts,
-    get_st_polygons,
-    get_sts,
-)
+import yaml
 
 configs = Path("mtbs_fire_analysis") / "analysis" / "configs.yaml"
 

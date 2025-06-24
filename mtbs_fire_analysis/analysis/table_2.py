@@ -2,7 +2,6 @@ import argparse
 
 import polars as pl
 
-
 eco_to_str = {
     5: "Northern Forest",
     6: "NW Forested Mountains",

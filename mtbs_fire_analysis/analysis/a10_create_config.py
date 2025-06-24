@@ -91,8 +91,8 @@ lvl3_codes["IntCode"] = (
 lvl3_codes = pl.DataFrame(lvl3_codes)
 # Swap out "/" for "+" in NA_L3NAME to avoid issues with writing files later
 lvl3_codes = lvl3_codes.with_columns(
-    pl.col('NA_L3NAME').str.replace_all(r"/", r"+")
-    )
+    pl.col("NA_L3NAME").str.replace_all(r"/", r"+")
+)
 
 summary = (
     summary.join(
@@ -135,7 +135,7 @@ candidates = (
 # burn, while still having enough data where there are fires
 
 
-#push candidates to yaml config file
+# push candidates to yaml config file
 
 with open("mtbs_fire_analysis/data/eco_nlcd_candidates.yaml", "w") as f:
     yaml.dump(
@@ -155,8 +155,8 @@ with open("mtbs_fire_analysis/data/eco_nlcd_candidates.yaml", "w") as f:
     )
 
 # push summaries to csv
-summary.select(pl.exclude('nlcds')).write_csv(
+summary.select(pl.exclude("nlcds")).write_csv(
     "mtbs_fire_analysis/data/eco_nlcd_summary.csv",
     include_header=True,
-    separator=","
+    separator=",",
 )
