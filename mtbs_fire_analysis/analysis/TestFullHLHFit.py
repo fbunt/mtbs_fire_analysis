@@ -19,11 +19,11 @@ refresh_sts = True
 refresh_polygons = True
 
 bootstrap = False
-
-cache_path = Path("/run") / "media" / "fire_analysis" / "cache"
+#%%
+cache_path = Path("/fire_analysis_data") / "data" / "cache"
 
 if refresh_dts or refresh_sts:
-    data_path = Path("/run") / "media" / "fire_analysis" / "data_tmp"
+    data_path = Path("/fire_analysis_data") / "data" / "results" / "mtbs_CONUS_1984_2022"
     lf = pl.scan_parquet(data_path)
     cache_path.mkdir(parents=True, exist_ok=True)
 
