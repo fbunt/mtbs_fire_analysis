@@ -37,7 +37,8 @@
         // Python and Jupyter extensions
         "ms-python.python",      // Core Python support
         "ms-toolsai.jupyter",     // Interactive Window / Notebooks
-        "charliermarsh.ruff"
+        "charliermarsh.ruff",
+        "mechatroner.rainbow-csv" // CSV file support
       ]
     }
   }
