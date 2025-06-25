@@ -61,6 +61,29 @@ class GridGeohasher:
         y = xy1[1] + self.yres_half
         return gpd.GeoSeries.from_xy(x, y, index=index, crs=self.crs)
 
+    def geohash_to_ij(self, geohash):
+        if isinstance(geohash, pd.Series):
+            index = geohash.index
+            geohash = geohash.to_numpy()
+        else:
+            index = None
+            geohash = np.asarray(geohash)
+        i, j = np.unravel_index(geohash, self.grid_shape)
+        if index is None:
+            return i, j
+        return pd.DataFrame({"i": i, "j": j}, index=index)
+
+    def geohash_from_ij(self, ij):
+        if isinstance(ij, pd.DataFrame):
+            index = ij.index
+            ij = (ij["i"].to_numpy(), ij["j"].to_numpy())
+        else:
+            index = None
+        geohash = np.ravel_multi_index(ij, self.grid_shape)
+        if index is None:
+            return geohash
+        return pd.Series(geohash, index=index)
+
 
 def _add_geom(df, hasher):
     geometry = hasher.reverse_geohash(df["geohash"])

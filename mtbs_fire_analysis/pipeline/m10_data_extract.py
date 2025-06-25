@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import polars as pl
 import raster_tools as rts
+import xarray as xr
 from dask.diagnostics import ProgressBar
 
 from mtbs_fire_analysis.defaults import DEFAULT_CRS
@@ -113,19 +114,27 @@ def _drop_duplicates(points):
     return points
 
 
-def _add_raster(points, raster, name, how=None):
+def _add_raster(points, raster_path, name, idxs, how=None):
     print(f"Adding {name}")
     start = time.time()
-    other_points = (
-        raster.to_points()
-        .drop(["band", "row", "col"], axis=1)
-        .rename(columns={"value": name})
-        .compute()
-    )
-    print(f"{len(other_points) = :,}")
+    raster = rts.Raster(raster_path)
+    xdata = raster.xdata
+    # Select burned locations
+    xvalues = xdata.isel(
+        band=xr.DataArray(np.zeros(len(idxs[0]), dtype=int), dims="z"),
+        y=xr.DataArray(idxs[0], dims="z"),
+        x=xr.DataArray(idxs[1], dims="z"),
+    ).to_numpy()
+    if raster.null_value is not None:
+        # Drop any null values we picked up
+        mask = ~rts.raster.get_mask_from_data(xvalues, raster.null_value)
+        idxs = idxs[0][mask], idxs[1][mask]
+        xvalues = xvalues[mask]
+        mask = None
     hasher = GridGeohasher()
-    other_points["geohash"] = hasher.geohash(other_points.geometry)
-    other_points = other_points.drop("geometry", axis=1)
+    other_points = pd.DataFrame(
+        {name: xvalues, "geohash": hasher.geohash_from_ij(idxs)}
+    )
     points = polars_join(points, other_points, how=how)
     d = time.time() - start
     print(_format_elapsed_time(d))
@@ -212,7 +221,11 @@ def _build_dataframe_and_save(
     )
     n = len(points)
 
-    points = _add_raster(points, rts.Raster(mtbs_path), "bs", how="left")
+    burned_indices = hasher.geohash_to_ij(
+        points.geohash.drop_duplicates().to_numpy()
+    )
+
+    points = _add_raster(points, mtbs_path, "bs", burned_indices, how="left")
     print(
         f"Size after join(bs): {len(points):,}"
         f" Loss/gain: {(len(points) - n):+,}"
@@ -226,42 +239,32 @@ def _build_dataframe_and_save(
     # )
     # n = len(points)
 
-    points = _add_raster(
-        points, _get_nlcd_raster(nlcd_path, perims_raster_path), "nlcd"
-    )
+    points = _add_raster(points, nlcd_path, "nlcd", burned_indices)
     print(
         f"Size after join(nlcd): {len(points):,}"
         f" Loss/gain: {(len(points) - n):+,}"
     )
     n = len(points)
-    points = _add_raster(
-        points, _get_wui_raster(wui_flag_path, perims_raster_path), "wui_flag"
-    )
+    points = _add_raster(points, wui_flag_path, "wui_flag", burned_indices)
     print(
         f"Size after join(wui_flag): {len(points):,}"
         f" Loss/gain: {(len(points) - n):+,}"
     )
     n = len(points)
-    points = _add_raster(
-        points, _get_wui_raster(wui_flag_path, perims_raster_path), "wui_class"
-    )
+    points = _add_raster(points, wui_class_path, "wui_class", burned_indices)
     print(
         f"Size after join(wui_class): {len(points):,}"
         f" Loss/gain: {(len(points) - n):+,}"
     )
     n = len(points)
-    points = _add_raster(
-        points, _get_wui_raster(wui_bool_path, perims_raster_path), "wui_bool"
-    )
+    points = _add_raster(points, wui_bool_path, "wui_bool", burned_indices)
     print(
         f"Size after join(wui_bool): {len(points):,}"
         f" Loss/gain: {(len(points) - n):+,}"
     )
     n = len(points)
 
-    points = _add_raster(
-        points, _get_wui_raster(wui_prox_path, perims_raster_path), "wui_prox"
-    )
+    points = _add_raster(points, wui_prox_path, "wui_prox", burned_indices)
     print(
         f"Size after join(wui_prox): {len(points):,}"
         f" Loss/gain: {(len(points) - n):+,}"
