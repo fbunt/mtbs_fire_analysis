@@ -53,7 +53,6 @@ def create_lookup_table(
                 .sort("st")
                 .to_numpy()
                 .flatten(),
-                np.array([full_interval]),
             ]
         )
 
