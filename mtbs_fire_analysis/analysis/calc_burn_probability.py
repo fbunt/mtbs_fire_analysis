@@ -15,18 +15,19 @@ from mtbs_fire_analysis.pipeline.paths import (
 )
 
 
-def bp_chunk(st, nlcd, eco, geohash, valid, hazard_table_path):
+def bp_chunk(st, nlcd, eco, geohash, valid, hazard_table_path, eco_level):
     shape = st.shape
     st = st[valid]
     nlcd = nlcd[valid]
     eco = eco[valid]
     geohash = geohash[valid]
+    eco_str = f"eco_lvl_{eco_level}"
     frame = pl.DataFrame(
         {
             "idx": np.arange(len(st)),
             "st": st,
             "nlcd": nlcd,
-            "eco": eco,
+            eco_str: eco,
             "geohash": geohash,
         }
     )
@@ -37,9 +38,9 @@ def bp_chunk(st, nlcd, eco, geohash, valid, hazard_table_path):
     geohash = None
 
     hazard_tbl = pl.read_parquet(hazard_table_path)
-    frame = frame.join(hazard_tbl, on=["eco", "nlcd", "st"], how="left").sort(
-        "idx"
-    )
+    frame = frame.join(
+        hazard_tbl, on=[eco_str, "nlcd", "st"], how="left"
+    ).sort("idx")
     hazards = frame.select("hazard").to_numpy().flatten()
     # Map nan to -1
     hazards = np.nan_to_num(hazards, nan=-1)
@@ -81,6 +82,7 @@ def main(eco_level, year):
         meta=np.array((), dtype="float32"),
         # Func params
         hazard_table_path=hazard_table_path,
+        eco_level=eco_level,
     )
     bp_raster = rts.data_to_raster_like(bp_data, geohash_raster, nv=-1)
     with ProgressBar():
