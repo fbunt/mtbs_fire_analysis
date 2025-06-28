@@ -10,12 +10,13 @@ from dask.diagnostics import ProgressBar
 from mtbs_fire_analysis.pipeline.paths import (
     ECO_REGIONS_RASTER_PATH,
     MTBS_ROOT,
+    RESULTS_DIR,
     ST_PATH,
     get_nlcd_raster_path,
 )
 
 
-def bp_chunk(st, nlcd, eco, geohash, valid, hazard_table_path, eco_level):
+def bp_chunk(st, nlcd, eco, geohash, valid, lookup_table_path, eco_level):
     shape = st.shape
     st = st[valid]
     nlcd = nlcd[valid]
@@ -37,17 +38,17 @@ def bp_chunk(st, nlcd, eco, geohash, valid, hazard_table_path, eco_level):
     eco = None
     geohash = None
 
-    hazard_tbl = pl.read_parquet(hazard_table_path)
+    lookup_tbl = pl.read_parquet(lookup_table_path)
     frame = frame.join(
-        hazard_tbl, on=[eco_str, "nlcd", "st"], how="left"
+        lookup_tbl, on=[eco_str, "nlcd", "st"], how="left"
     ).sort("idx")
-    hazards = frame.select("hazard").to_numpy().flatten()
+    bp = frame.select("burn_prob").to_numpy().flatten()
     # Map nan to -1
-    hazards = np.nan_to_num(hazards, nan=-1)
+    bp = np.nan_to_num(bp, nan=-1)
     frame = None
-    hazard_tbl = None
+    lookup_tbl = None
     result = np.full(shape, -1, dtype="float32")
-    result[valid] = hazards
+    result[valid] = bp
     return result
 
 
@@ -57,7 +58,7 @@ def main(eco_level, year):
     nlcd_path = get_nlcd_raster_path(year)
     eco_path = ECO_REGIONS_RASTER_PATH / f"eco_lvl_{eco_level}.tif"
     # TODO: Add to paths?
-    hazard_table_path = MTBS_ROOT / "hazard_table.parquet"
+    lookup_table_path = RESULTS_DIR / f"lookup_table_{year}-01-01.parquet"
 
     # The geohash raster is the largest raster in terms of dtype so use its
     # chunksize.
@@ -81,7 +82,7 @@ def main(eco_level, year):
         dtype="float32",
         meta=np.array((), dtype="float32"),
         # Func params
-        hazard_table_path=hazard_table_path,
+        lookup_table_path=lookup_table_path,
         eco_level=eco_level,
     )
     bp_raster = rts.data_to_raster_like(bp_data, geohash_raster, nv=-1)
