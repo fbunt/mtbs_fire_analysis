@@ -54,7 +54,7 @@ def bp_chunk(st, nlcd, eco, geohash, valid, lookup_table_path, eco_level):
 
 def main(eco_level, year):
     geohash_raster = rts.Raster(MTBS_ROOT / "hash_grid.tif")
-    st_path = ST_PATH / "st.tif"
+    st_path = ST_PATH / f"st_{year}.tif"
     nlcd_path = get_nlcd_raster_path(year)
     eco_path = ECO_REGIONS_RASTER_PATH / f"eco_lvl_{eco_level}.tif"
     # TODO: Add to paths?
