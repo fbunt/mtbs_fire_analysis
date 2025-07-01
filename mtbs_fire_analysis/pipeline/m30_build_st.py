@@ -107,9 +107,9 @@ def st_chunk(x, start_year, end_year):
     x = np.datetime64("1970-01-01") + x.astype("timedelta64[D]")
     # Days until Jan 1, {end_year}
     x = np.datetime64(f"{end_year}-01-01") - x
-    # Convert delta to years
-    x = x.astype("int16") * np.float32(1 / 365)
-    x[mask] = end_year - start_year
+    # Keep as integer days to avoid float32 precision issues
+    x = x.astype("int16")
+    x[mask] = (end_year - start_year) * 365
     return x
 
 
