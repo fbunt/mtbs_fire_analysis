@@ -30,6 +30,7 @@ def main(year, config_path, bp_path, out_path):
     bpt_data = np.where(burn.data >= 1, np.log(bp_data), np.log(1 - bp_data))
     valid = ~bp.mask & ~nlcd.mask & ~eco3.mask
     results = []
+    counts = []
     for conf in config:
         print(conf["name"])
         ecos = conf["eco_lvl_3"]
@@ -42,15 +43,22 @@ def main(year, config_path, bp_path, out_path):
         selector = reduce(lambda a, b: a & b, selectors)
         selectors = None
         results.append(bpt_data[selector].sum())
+        counts.append(selector.sum())
     with ProgressBar():
-        results = dask.compute(results)[0]
+        print("Computing raw scores")
+        results, counts = dask.compute(results, counts)
     results_df = pl.DataFrame(
         {
             "name": [conf["name"] for conf in config],
             "eco3": [conf["eco_lvl_3"] for conf in config],
             "nlcd": [conf["nlcd"] for conf in config],
-            "score": results,
+            "raw_score": results,
+            "N": counts,
         }
+    ).with_columns(
+        score=pl.when(pl.col("N") > 0)
+        .then(pl.col("raw_score") / pl.col("N"))
+        .otherwise(0)
     )
     results_df.write_parquet(out_path)
 
