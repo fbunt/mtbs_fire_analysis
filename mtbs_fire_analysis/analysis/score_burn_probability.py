@@ -16,6 +16,14 @@ from mtbs_fire_analysis.pipeline.paths import (
 )
 
 
+def or_(a, b):
+    return a | b
+
+
+def and_(a, b):
+    return a & b
+
+
 def main(year, config_path, bp_path, out_path):
     with open(config_path) as fd:
         config = yaml.safe_load(fd)["eco3_config"]
@@ -35,13 +43,12 @@ def main(year, config_path, bp_path, out_path):
         print(conf["name"])
         ecos = conf["eco_lvl_3"]
         ns = conf["nlcd"]
-        selectors = (
+        selector = reduce(
+            and_,
             [valid]
-            + [eco3.data == e for e in ecos]
-            + [nlcd.data == n for n in ns]
+            + reduce(or_, [eco3.data == e for e in ecos])
+            + reduce(or_, [nlcd.data == n for n in ns]),
         )
-        selector = reduce(lambda a, b: a & b, selectors)
-        selectors = None
         results.append(bpt_data[selector].sum())
         counts.append(selector.sum())
     with ProgressBar():
