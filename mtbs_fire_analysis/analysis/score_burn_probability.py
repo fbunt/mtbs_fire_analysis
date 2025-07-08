@@ -44,10 +44,7 @@ def main(year, config_path, bp_path, out_path):
         ecos = conf["eco_lvl_3"]
         ns = conf["nlcd"]
         selector = reduce(
-            and_,
-            [valid]
-            + reduce(or_, [eco3.data == e for e in ecos])
-            + reduce(or_, [nlcd.data == n for n in ns]),
+            and_, [valid, np.isin(eco3.data, ecos), np.isin(nlcd.data, ns)]
         )
         results.append(bpt_data[selector].sum())
         counts.append(selector.sum())
