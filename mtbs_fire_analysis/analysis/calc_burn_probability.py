@@ -5,7 +5,6 @@ import numpy as np
 import polars as pl
 import raster_tools as rts
 import rioxarray as xrio
-from dask.diagnostics import ProgressBar
 
 from mtbs_fire_analysis.pipeline.paths import (
     ECO_REGIONS_RASTER_PATH,
@@ -14,6 +13,7 @@ from mtbs_fire_analysis.pipeline.paths import (
     ST_PATH,
     get_nlcd_raster_path,
 )
+from mtbs_fire_analysis.utils import protected_raster_save_with_cleanup
 
 
 def bp_chunk(st, nlcd, eco, geohash, valid, lookup_table_path, eco_level):
@@ -86,8 +86,11 @@ def main(eco_level, year):
         eco_level=eco_level,
     )
     bp_raster = rts.data_to_raster_like(bp_data, geohash_raster, nv=-1)
-    with ProgressBar():
-        bp_raster.save(MTBS_ROOT / f"bp_eco_lvl_{eco_level}_{year}.tif")
+    protected_raster_save_with_cleanup(
+        bp_raster,
+        MTBS_ROOT / f"bp_eco_lvl_{eco_level}_{year}.tif",
+        skip_if_exists=False,
+    )
 
 
 def _get_parser():

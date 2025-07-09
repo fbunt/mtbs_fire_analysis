@@ -5,7 +5,6 @@ from pathlib import Path
 
 import numpy as np
 import raster_tools as rts
-from dask.diagnostics import ProgressBar
 
 from mtbs_fire_analysis.pipeline.paths import PERIMS_RASTERS_PATH, ST_PATH
 from mtbs_fire_analysis.utils import protected_raster_save_with_cleanup
@@ -31,8 +30,7 @@ def build_st(end_year):
     st = rts.data_to_raster_like(data, like=raster, nv=None)
     path = f"st/st_{end_year}.tif"
     print(f"Saving to {path}")
-    with ProgressBar():
-        st.save(path)
+    protected_raster_save_with_cleanup(st, path, skip_if_exists=False)
 
 
 def stack_dse_years_as_vrt(start_year, end_year):

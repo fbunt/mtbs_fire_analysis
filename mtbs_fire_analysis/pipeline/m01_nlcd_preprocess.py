@@ -7,6 +7,7 @@ from dask.diagnostics import ProgressBar
 
 from mtbs_fire_analysis.defaults import DEFAULT_GEOHASH_GEOBOX
 from mtbs_fire_analysis.pipeline.paths import NLCD_PATH, RAW_NLCD
+from mtbs_fire_analysis.utils import protected_raster_save_with_cleanup
 
 
 def main():
@@ -22,11 +23,7 @@ def main():
             path1984 = NLCD_PATH / path.name.replace("1985", "1984")
             path1985 = outpath
         print(f"{path} --> {outpath}")
-        if outpath.exists():
-            print("Skipping")
-            continue
-        with ProgressBar():
-            r.save(outpath, tiled=True)
+        protected_raster_save_with_cleanup(r, outpath)
     # Duplicate 1985 to get an NLCD for 1984
     if not path1984.exists():
         print("Copying 1985 to 1984")

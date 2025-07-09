@@ -2,13 +2,13 @@ import glob
 from pathlib import Path
 
 import raster_tools as rts
-from dask.diagnostics import ProgressBar
 
 from mtbs_fire_analysis.defaults import DEFAULT_GEOHASH_GEOBOX
 from mtbs_fire_analysis.pipeline.paths import (
     CLEANED_RASTER_DATA_DIR,
     RAW_RASTER_DATA_DIR,
 )
+from mtbs_fire_analysis.utils import protected_raster_save_with_cleanup
 
 
 def main():
@@ -22,11 +22,7 @@ def main():
         data_path = Path(data_path)
         out_path = CLEANED_RASTER_DATA_DIR / data_path.name
         print(out_path)
-        if out_path.exists():
-            print("Skipping")
-            continue
-        with ProgressBar():
-            r.save(out_path)
+        protected_raster_save_with_cleanup(r, out_path)
 
 
 if __name__ == "__main__":
