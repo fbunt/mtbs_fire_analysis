@@ -26,6 +26,7 @@ ECO_REGIONS_RASTER_PATH = ECO_REGIONS_DIR / "rasters"
 NLCD_DIR = MTBS_ROOT / "nlcd"
 RAW_NLCD = NLCD_DIR / "raw"
 NLCD_PATH = NLCD_DIR / "cleaned"
+NLCD_MODE_RASTER_PATH = NLCD_PATH / "nlcd_mode_1984_2022.tif"
 
 WUI_DIR = MTBS_ROOT / "wui"
 RAW_WUI = WUI_DIR / "raw" / "CONUS_WUI_block_1990_2020_change_v4.gdb"
@@ -40,7 +41,7 @@ MTBS_TIF_FMT = "mtbs_{aoi}_{year}.tif"
 NLCD_TIF_FMT = "Annual_NLCD_LndCov_{year}_CU_C1V0.tif"
 TMP_PTS_FMT = "mtbs_{aoi}_{year}"
 COMBINED_OUT_FMT = "mtbs_{aoi}_{min_year}_{max_year}"
-PIXEL_COUNT_OUT_FMT = "eco_nlcd_pixel_counts_{year}_{eco_level}.pqt"
+PIXEL_COUNT_OUT_FMT = "eco_nlcd_mode_pixel_counts_eco{eco_level}.pqt"
 
 
 # --- Path Builders ---
