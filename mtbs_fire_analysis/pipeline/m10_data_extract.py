@@ -214,6 +214,12 @@ def _build_dataframe_and_save(
     hasher = GridGeohasher()
     points["geohash"] = hasher.geohash(geometry)
     geometry = None
+    print("Adding lon/lat")
+    lon, lat = hasher.geohash_to_lonlat(points.geohash.to_numpy())
+    points["lon"] = lon
+    points["lat"] = lat
+    lon = None
+    lat = None
 
     points = _drop_duplicates(points)
     print(

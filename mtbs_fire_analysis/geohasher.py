@@ -4,6 +4,7 @@ import dask
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+import pyproj
 from affine import Affine
 
 from mtbs_fire_analysis.defaults import (
@@ -45,21 +46,10 @@ class GridGeohasher:
         return np.ravel_multi_index((rows, cols), self.grid_shape)
 
     def reverse_geohash(self, geohash):
-        if isinstance(geohash, pd.Series):
-            index = geohash.index
-            geohash = geohash.to_numpy()
-        else:
-            index = None
-            geohash = np.asarray(geohash)
-        affine_matrix = np.array(list(self.affine)).reshape(3, 3)
-        row, col = np.unravel_index(geohash, self.grid_shape)
-        cr1 = np.ones((3, len(geohash)), dtype="float64")
-        cr1[0, :] = col
-        cr1[1, :] = row
-        xy1 = affine_matrix @ cr1
-        x = xy1[0] + self.xres_half
-        y = xy1[1] + self.yres_half
-        return gpd.GeoSeries.from_xy(x, y, index=index, crs=self.crs)
+        xy = self.geohash_to_xy(geohash)
+        if not isinstance(geohash, pd.Series):
+            return gpd.GeoSeries.from_xy(xy[0], xy[1], crs=self.crs)
+        return xy
 
     def geohash_to_ij(self, geohash):
         if isinstance(geohash, pd.Series):
@@ -83,6 +73,42 @@ class GridGeohasher:
         if index is None:
             return geohash
         return pd.Series(geohash, index=index)
+
+    def geohash_to_xy(self, geohash):
+        if isinstance(geohash, pd.Series):
+            index = geohash.index
+            geohash = geohash.to_numpy()
+        else:
+            index = None
+            geohash = np.asarray(geohash)
+        affine_matrix = np.array(list(self.affine)).reshape(3, 3)
+        row, col = np.unravel_index(geohash, self.grid_shape)
+        cr1 = np.ones((3, len(geohash)), dtype="float64")
+        cr1[0, :] = col
+        cr1[1, :] = row
+        xy1 = affine_matrix @ cr1
+        x = xy1[0] + self.xres_half
+        y = xy1[1] + self.yres_half
+        if index is None:
+            return x, y
+        return gpd.GeoSeries.from_xy(x, y, index=index, crs=self.crs)
+
+    def geohash_to_lonlat(self, geohash):
+        if isinstance(geohash, pd.Series):
+            index = geohash.index
+            geohash = geohash.to_numpy()
+        else:
+            index = None
+        x, y = self.geohash_to_xy(geohash)
+        geohash = None
+        transformer = pyproj.Transformer.from_crs(
+            self.crs, "EPSG:4326", always_xy=True
+        )
+        lon, lat = transformer.transform(x, y)
+        if index is None:
+            return lon, lat
+        return gpd.GeoSeries.from_xy(lon, lat, index=index, crs="EPSG:4326")
+
 
 
 def _add_geom(df, hasher):
