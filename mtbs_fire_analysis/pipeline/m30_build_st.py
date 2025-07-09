@@ -1,13 +1,14 @@
 import argparse
-import pprint
-import subprocess
 from pathlib import Path
 
 import numpy as np
 import raster_tools as rts
 
 from mtbs_fire_analysis.pipeline.paths import PERIMS_RASTERS_PATH, ST_PATH
-from mtbs_fire_analysis.utils import protected_raster_save_with_cleanup
+from mtbs_fire_analysis.utils import (
+    protected_raster_save_with_cleanup,
+    stack_rasters_as_vrt,
+)
 
 
 def _get_vrt_path(start_year, end_year):
@@ -39,25 +40,7 @@ def stack_dse_years_as_vrt(start_year, end_year):
         Path(PERIMS_RASTERS_PATH / f"dse_{y}.tif")
         for y in range(start_year, end_year + 1)
     ]
-    for p in paths:
-        assert p.exists(), f"{p} does not exist"
-    paths = map(str, paths)
-    out_path = _get_vrt_path(start_year, end_year)
-    if out_path.exists():
-        out_path.unlink()
-    # We could do this by importing gdal but rasterio STRONGLY recommends not
-    # doing so because it will probably break rasterio. Thus we do it through
-    # a shell call.
-    # See: https://rasterio.readthedocs.io/en/stable/topics/switch.html#mutual-incompatibilities
-    command = ["gdalbuildvrt", "-separate", str(out_path)]
-    command.extend(paths)
-    print(f"Build VRT command:\n{pprint.pformat(command)}")
-    try:
-        subprocess.run(command, check=True, capture_output=True)
-    except subprocess.CalledProcessError as err:
-        print(f"STDOUT\n------\n{err.stdout}")
-        print(f"STDERR\n------\n{err.stderr}")
-        raise err
+    stack_rasters_as_vrt(map(str, paths), _get_vrt_path(start_year, end_year))
 
 
 def calc_dse_max(start_year, end_year):
