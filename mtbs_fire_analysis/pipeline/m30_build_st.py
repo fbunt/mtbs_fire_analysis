@@ -8,6 +8,7 @@ import raster_tools as rts
 from dask.diagnostics import ProgressBar
 
 from mtbs_fire_analysis.pipeline.paths import PERIMS_RASTERS_PATH, ST_PATH
+from mtbs_fire_analysis.utils import protected_raster_save_with_cleanup
 
 
 def _get_vrt_path(start_year, end_year):
@@ -16,19 +17,6 @@ def _get_vrt_path(start_year, end_year):
 
 def _get_dse_max_path(end_year):
     return PERIMS_RASTERS_PATH / f"dse_max_{end_year}.tif"
-
-
-def _protected_save_with_cleanup(raster, path):
-    if path.exists():
-        print("Already exists. Skipping.")
-        return
-    try:
-        with ProgressBar():
-            raster.save(path, tiled=True)
-    except (Exception, KeyboardInterrupt) as err:
-        print("Removing unfinished file")
-        path.unlink()
-        raise err
 
 
 def build_st(end_year):
@@ -97,7 +85,7 @@ def calc_dse_max(start_year, end_year):
     )
     out_path = _get_dse_max_path(end_year)
     print(f"Saving to {out_path}")
-    _protected_save_with_cleanup(dse_max, out_path)
+    protected_raster_save_with_cleanup(dse_max, out_path)
 
 
 def st_chunk(x, start_year, end_year):
@@ -126,7 +114,7 @@ def calc_st_for_end_year(end_year):
     st = rts.data_to_raster_like(data, like=dse_raster, nv=None)
     out_path = ST_PATH / f"st_{end_year}.tif"
     print(f"Saving ST to {out_path}")
-    _protected_save_with_cleanup(st, out_path)
+    protected_raster_save_with_cleanup(st, out_path)
 
 
 def main(end_years):
