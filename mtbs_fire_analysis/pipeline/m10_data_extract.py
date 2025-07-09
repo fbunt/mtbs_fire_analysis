@@ -15,6 +15,7 @@ from mtbs_fire_analysis.defaults import DEFAULT_CRS
 from mtbs_fire_analysis.geohasher import GridGeohasher
 from mtbs_fire_analysis.pipeline.paths import (
     ECO_REGIONS_PATH,
+    NLCD_MODE_RASTER_PATH,
     PERIMS_PATH,
     PERIMS_RASTERS_PATH,
     STATES_PATH,
@@ -242,6 +243,14 @@ def _build_dataframe_and_save(
     points = _add_raster(points, nlcd_path, "nlcd", burned_indices)
     print(
         f"Size after join(nlcd): {len(points):,}"
+        f" Loss/gain: {(len(points) - n):+,}"
+    )
+    n = len(points)
+    points = _add_raster(
+        points, NLCD_MODE_RASTER_PATH, "nlcd_mode", burned_indices
+    )
+    print(
+        f"Size after join(nlcd_mode): {len(points):,}"
         f" Loss/gain: {(len(points) - n):+,}"
     )
     n = len(points)
