@@ -21,7 +21,6 @@ def _get_dse_max_path(end_year):
 
 def build_st(end_year):
     raster = rts.Raster(_get_dse_max_path(end_year - 1))
-    # raster = rts.Raster(f"mtbs_perims/rasters/dse_max_{end_year - 1}.tif")
     data = raster.data
     data = data.map_blocks(
         st_chunk,
