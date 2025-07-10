@@ -10,6 +10,7 @@ from mtbs_fire_analysis.pipeline.paths import (
 
 if __name__ == "__main__":
     eco_full_df = gpd.read_file(RAW_ECO_REGIONS_PATH).to_crs(DEFAULT_CRS)
+    eco_full_df["geometry"] = eco_full_df.geometry.make_valid()
     # Drop water
     eco_full_df = eco_full_df[eco_full_df.NA_L1CODE != "0"]
     code123 = (
