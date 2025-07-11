@@ -3,7 +3,6 @@ import shutil
 from pathlib import Path
 
 import raster_tools as rts
-from dask.diagnostics import ProgressBar
 
 from mtbs_fire_analysis.defaults import DEFAULT_GEOHASH_GEOBOX
 from mtbs_fire_analysis.pipeline.paths import NLCD_PATH, RAW_NLCD
