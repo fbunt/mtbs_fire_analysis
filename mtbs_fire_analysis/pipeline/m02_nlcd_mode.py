@@ -15,7 +15,7 @@ from mtbs_fire_analysis.utils import (
 
 
 def main():
-    nlcd_paths = [get_nlcd_raster_path(y) for y in range(1984, 2022)]
+    nlcd_paths = [get_nlcd_raster_path(y) for y in range(1984, 2023)]
     stack_rasters_as_vrt(nlcd_paths, NLCD_STACK_VRT_PATH)
     nlcd_stack = rts.Raster(NLCD_STACK_VRT_PATH)
     mode = rts.general.local_stats(nlcd_stack, "mode")
