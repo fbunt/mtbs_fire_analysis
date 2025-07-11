@@ -15,6 +15,7 @@ from mtbs_fire_analysis.defaults import DEFAULT_CRS
 from mtbs_fire_analysis.geohasher import GridGeohasher
 from mtbs_fire_analysis.pipeline.paths import (
     ECO_REGIONS_PATH,
+    HEX_GRID_PATH,
     NLCD_MODE_RASTER_PATH,
     PERIMS_PATH,
     PERIMS_RASTERS_PATH,
@@ -181,6 +182,7 @@ def _build_dataframe_and_save(
     year,
     perims,
     eco_regions,
+    hex_grid,
 ):
     points = _get_initial_points(perims_raster_path)
     print(f"Size initial: {len(points):,}. Loss/gain: {(len(points) - 0):+,}")
@@ -203,6 +205,12 @@ def _build_dataframe_and_save(
     points = _join_with_eco_regions(points, eco_regions)
     print(
         f"Size after join(eco_regions): {len(points):,}."
+        f" Loss/gain: {(len(points) - n):+,}"
+    )
+    n = len(points)
+    points = parallel_sjoin(points, hex_grid, 20)
+    print(
+        f"Size after join(hex_grid): {len(points):,}."
         f" Loss/gain: {(len(points) - n):+,}"
     )
     n = len(points)
@@ -311,6 +319,7 @@ def save_raster_to_points(years, crs):
             continue
         perims = get_mtbs_perims_by_year_and_aoi(year, aoi_gs.values[0], crs)
         eco_regions = get_eco_regions_by_aoi(aoi_gs.values[0], crs)
+        hex_grid = gpd.read_file(HEX_GRID_PATH)
         print(f"---\nPreprocessing: {year}")
         start = time.time()
         with ProgressBar():
@@ -326,6 +335,7 @@ def save_raster_to_points(years, crs):
                 year,
                 perims,
                 eco_regions,
+                hex_grid,
             )
         print("Done")
         d = time.time() - start
