@@ -11,11 +11,20 @@ def flatmap(func, iterable):
 
 
 def protected_raster_save_with_cleanup(
-    raster, path, skip_if_exists=True, progress=True, **save_opts
+    raster,
+    path,
+    skip_if_exists=True,
+    progress=True,
+    compress=True,
+    **save_opts,
 ):
     if skip_if_exists and path.exists():
         print("Already exists. Skipping.")
         return
+
+    if compress:
+        save_opts["compress"] = "zstd"
+        save_opts["zstd_level"] = 1
     try:
         with ProgressBar() if progress else contextlib.nullcontext():
             raster.save(path, tiled=True, **save_opts)
