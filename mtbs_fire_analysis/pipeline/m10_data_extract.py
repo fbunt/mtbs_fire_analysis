@@ -183,6 +183,7 @@ def _build_dataframe_and_save(
     perims,
     eco_regions,
     hex_grid,
+    drop_extra,
 ):
     points = _get_initial_points(perims_raster_path)
     print(f"Size initial: {len(points):,}. Loss/gain: {(len(points) - 0):+,}")
@@ -208,7 +209,23 @@ def _build_dataframe_and_save(
         f" Loss/gain: {(len(points) - n):+,}"
     )
     n = len(points)
+    if drop_extra:
+        extra_cols = [
+            "Incid_Name",
+            "Asmnt_Type",
+            "area_acres",
+            "days_since_epoch",
+            "dNBR_offst",
+            "dNBR_stdDv",
+            "IncGreen_T",
+            "Low_T",
+            "Mod_T",
+            "High_T",
+        ]
+        print(f"Dropping extra columns: {extra_cols}")
+        points = points.drop(columns=extra_cols)
     points = parallel_sjoin(points, hex_grid, 20)
+    points = points.drop(columns="index_right")
     print(
         f"Size after join(hex_grid): {len(points):,}."
         f" Loss/gain: {(len(points) - n):+,}"
@@ -231,10 +248,14 @@ def _build_dataframe_and_save(
 
     points = _drop_duplicates(points)
     print(
-        f"Size after drop(duplicated(geohash, Ig_Date)): {len(points):,}."
+        f"Size after drop(duplicated(geohash, Ig_Date, Event_ID)): "
+        f"{len(points):,}."
         f" Loss/gain: {(len(points) - n):+,}"
     )
     n = len(points)
+    if drop_extra:
+        print("Dropping extra columns: Event_ID")
+        points = points.drop(columns="Event_ID")
 
     burned_indices = hasher.geohash_to_ij(
         points.geohash.drop_duplicates().to_numpy()
@@ -342,10 +363,10 @@ def save_raster_to_points(years, crs):
         print(f"Total time for {year}: {_format_elapsed_time(d)}")
 
 
-def main(min_year, max_year):
+def main(min_year, max_year, all_columns):
     years = list(range(min_year, max_year + 1))
     crs = DEFAULT_CRS
-    save_raster_to_points(years, crs)
+    save_raster_to_points(years, crs, not all_columns)
 
 
 DESC = """
@@ -370,10 +391,16 @@ def _get_parser():
         type=int,
         help="Maximum year to pull data from",
     )
+    p.add_argumnet(
+        "-a",
+        "--all-columns",
+        action="store_true",
+        help="Keep all extra columns",
+    )
     return p
 
 
 if __name__ == "__main__":
     args = _get_parser().parse_args()
     assert args.min_year <= args.max_year
-    main(args.min_year, args.max_year)
+    main(args.min_year, args.max_year, args.all_columns)
