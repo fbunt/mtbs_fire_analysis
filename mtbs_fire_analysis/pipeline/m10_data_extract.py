@@ -321,7 +321,7 @@ def _build_dataframe_and_save(
     points.to_parquet(out_path)
 
 
-def save_raster_to_points(years, crs):
+def save_raster_to_points(years, crs, drop_extra_cols):
     aoi_gs = get_conus_geom(crs)
     for year in years:
         perims_raster_path = get_mtbs_perims_raster_path(year)
@@ -357,6 +357,7 @@ def save_raster_to_points(years, crs):
                 perims,
                 eco_regions,
                 hex_grid,
+                drop_extra_cols,
             )
         print("Done")
         d = time.time() - start
