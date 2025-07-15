@@ -391,7 +391,7 @@ def _get_parser():
         type=int,
         help="Maximum year to pull data from",
     )
-    p.add_argumnet(
+    p.add_argument(
         "-a",
         "--all-columns",
         action="store_true",
