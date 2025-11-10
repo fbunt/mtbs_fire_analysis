@@ -452,8 +452,9 @@ class HalfLifeHazardDistribution:
         empty_counts=None,
         method: str = "L-BFGS-B",
         options: dict | None = None,
-        use_gradient: bool = True,
+        use_gradient: bool = False,
         print_errors: bool = True,
+        **kwargs,
     ):
         """Maximum‑likelihood fit to any mix of observation types.
 
@@ -478,29 +479,82 @@ class HalfLifeHazardDistribution:
             (np.log(1e-5), np.log(1e5)),
         )
 
-        # jac = (
-        #     self._grad_neg_log_likelihood_for_params
-        #     if use_gradient else None
-        # )
+        # --- Soft penalty to keep the search in a practical region --------
+        #    Smooth quadratic outside a domain-informed box.
+        def _soft_penalty_from_theta(theta_log):
+            h_inf, tau, _ = HalfLifeHazardDistribution._theta_to_params(theta_log)
+            # Guard invalids hard
+            if (not np.isfinite(h_inf)) or (not np.isfinite(tau)) or h_inf <= 0.0 or tau <= 0.0:
+                return 1e9
+            # Preferred box (adjust as needed)
+            h_lo, h_hi = 1e-4, 1.0
+            t_lo, t_hi = 0.5, 200.0
+            strength = 1e3
+            pen = 0.0
+            if h_inf < h_lo:
+                d = (h_lo - h_inf) / h_lo
+                pen += d * d
+            elif h_inf > h_hi:
+                d = (h_inf - h_hi) / h_hi
+                pen += d * d
+            if tau < t_lo:
+                d = (t_lo - tau) / t_lo
+                pen += d * d
+            elif tau > t_hi:
+                d = (tau - t_hi) / t_hi
+                pen += d * d
+            return float(strength * pen)
 
-        res = minimize(
-            self._neg_log_likelihood_for_params,
-            theta0,
-            args=(
-                data,
-                data_counts,
-                survival_data,
-                survival_counts,
-                initial_gaps,
-                initial_counts,
-                empty_windows,
-                empty_counts,
-            ),
-            method=method,
-            # jac=jac,
-            bounds=bounds_log,
-            options={} if options is None else options,
-        )
+        def _objective_with_penalty(theta_log):  # finite-diff path
+            try:
+                nll = HalfLifeHazardDistribution._neg_log_likelihood_for_params(
+                    theta_log,
+                    data,
+                    data_counts,
+                    survival_data,
+                    survival_counts,
+                    initial_gaps,
+                    initial_counts,
+                    empty_windows,
+                    empty_counts,
+                )
+            except Exception:
+                return 1e12
+            pen = _soft_penalty_from_theta(theta_log)
+            total = nll + pen
+            if not np.isfinite(total):
+                return 1e12
+            return float(total)
+
+        if use_gradient:
+            # Gradient path (no soft penalty term in jac; use when you trust initialisation)
+            res = minimize(
+                self._neg_log_likelihood_for_params,
+                theta0,
+                args=(
+                    data,
+                    data_counts,
+                    survival_data,
+                    survival_counts,
+                    initial_gaps,
+                    initial_counts,
+                    empty_windows,
+                    empty_counts,
+                ),
+                method=method,
+                jac=self._grad_neg_log_likelihood_for_params,
+                bounds=bounds_log,
+                options={} if options is None else options,
+            )
+        else:
+            # Finite-difference with soft penalty for stability
+            res = minimize(
+                _objective_with_penalty,
+                theta0,
+                method=method,
+                bounds=bounds_log,
+                options={} if options is None else options,
+            )
 
         if not res.success:
             if print_errors:
@@ -518,3 +572,8 @@ class HalfLifeHazardDistribution:
         self.hazard_inf, tau = np.exp(res.x)
         self.lam = LN2 / tau
         return self
+
+    # ----------------------- cloning helper ------------------------------
+    def copy(self):
+        """Return an independent instance with the same parameters."""
+        return HalfLifeHazardDistribution(self.hazard_inf, self.half_life)
