@@ -32,7 +32,10 @@ _EPS = 1e-12  # numeric safety guard for logs / divisions
 # ---------------------------------------------------------------------------
 #  Distribution definition
 # ---------------------------------------------------------------------------
-class HalfLifeHazardDistribution:
+from .lifetime_base import BaseLifetime
+
+
+class HalfLifeHazardDistribution(BaseLifetime):
     """Lifetime model with asymptoting hazard (see module docstring)."""
 
     # ------------------------- construction --------------------------------
@@ -402,40 +405,7 @@ class HalfLifeHazardDistribution:
     # ---------------------------------------------------------------------
     #  Public NLL wrapper (instance uses its own parameters) ----------------
     # ---------------------------------------------------------------------
-    def neg_log_likelihood(
-        self,
-        data,
-        data_counts=None,
-        survival_data=None,
-        survival_counts=None,
-        initial_gaps=None,
-        initial_counts=None,
-        empty_windows=None,
-        empty_counts=None,
-    ) -> float:
-        """Compute −log L for the provided observations."""
-        data = np.asarray(data, float)
-        survival_data = (
-            None if survival_data is None else np.asarray(survival_data, float)
-        )
-        initial_gaps = (
-            None if initial_gaps is None else np.asarray(initial_gaps, float)
-        )
-        empty_windows = (
-            None if empty_windows is None else np.asarray(empty_windows, float)
-        )
-
-        return self._neg_log_likelihood_for_params(
-            np.log([self.hazard_inf, self.half_life]),
-            data,
-            data_counts,
-            survival_data,
-            survival_counts,
-            initial_gaps,
-            initial_counts,
-            empty_windows,
-            empty_counts,
-        )
+    # Use BaseLifetime.neg_log_likelihood (pdf/sf/mean/tail_survival already defined)
 
     # ---------------------------------------------------------------------
     #  Maximum‑likelihood fit ----------------------------------------------
@@ -577,3 +547,41 @@ class HalfLifeHazardDistribution:
     def copy(self):
         """Return an independent instance with the same parameters."""
         return HalfLifeHazardDistribution(self.hazard_inf, self.half_life)
+
+    # BaseLifetime parametrisation hooks ---------------------------------
+    def _theta_get(self) -> np.ndarray:
+        return np.log([self.hazard_inf, self.half_life])
+
+    def _theta_set(self, theta: np.ndarray) -> None:
+        h_inf, tau = np.exp(theta)
+        self.hazard_inf = float(h_inf)
+        self.lam = LN2 / float(tau)
+
+    def default_bounds(self):
+        return (
+            (np.log(1e-12), np.log(10.0)),
+            (np.log(1e-5), np.log(1e5)),
+        )
+
+    def _soft_penalty(self) -> float:
+        h_inf = self.hazard_inf
+        tau = self.half_life
+        if (not np.isfinite(h_inf)) or (not np.isfinite(tau)) or h_inf <= 0 or tau <= 0:
+            return 1e9
+        h_lo, h_hi = 1e-4, 1.0
+        t_lo, t_hi = 0.5, 200.0
+        strength = 1e3
+        pen = 0.0
+        if h_inf < h_lo:
+            d = (h_lo - h_inf) / h_lo
+            pen += d * d
+        elif h_inf > h_hi:
+            d = (h_inf - h_hi) / h_hi
+            pen += d * d
+        if tau < t_lo:
+            d = (t_lo - tau) / t_lo
+            pen += d * d
+        elif tau > t_hi:
+            d = (tau - t_hi) / t_hi
+            pen += d * d
+        return float(strength * pen)

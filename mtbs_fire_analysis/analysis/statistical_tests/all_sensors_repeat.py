@@ -184,12 +184,12 @@ def run_hlh_simulation(
 
 if __name__ == "__main__":
     o, fo = run_hlh_simulation(
-        num_pixels=500,
+        num_pixels=5000,
         time_interval=39,
         iterations=100,
         truth=HLHD(0.03, 50),
-        properties=("mean", "expected_hazard_ge"),
-        prop_args={"expected_hazard_ge": [39]},
+        properties=("mean",),#), "expected_hazard_ge"),
+        prop_args={},#{"expected_hazard_ge": [39]},
         pre_window=1000,
         random_seed=1989,
     )
