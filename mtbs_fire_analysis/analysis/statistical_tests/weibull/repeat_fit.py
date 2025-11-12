@@ -1,27 +1,28 @@
-"""Repeated-fit smoke test for Inverse Gaussian (IG) using shared helper."""
-
 from __future__ import annotations
 
-from mtbs_fire_analysis.analysis.statistical_tests.defaults import IG_DEF, SIM
+from mtbs_fire_analysis.analysis.statistical_tests.defaults import (
+    WEIBULL_DEF,
+    SIM,
+)
 from mtbs_fire_analysis.analysis.statistical_tests.repeat_helpers import (
     run_repeat_simulation,
 )
-from mtbs_fire_analysis.analysis.scipy_dist import InverseGauss
+from mtbs_fire_analysis.analysis.scipy_dist import Weibull
 
 
-def run_inverse_gauss_simulation(
+def run_weibull_simulation(
     num_pixels: int | None = None,
     time_interval: int | None = None,
     iterations: int | None = None,
-    truth: InverseGauss | None = None,
+    truth: Weibull | None = None,
     properties: tuple[str, ...] = ("mean",),
     prop_args: dict | None = None,
     pre_window: int | None = None,
     random_seed: int | None = None,
 ):
-    truth_model = IG_DEF.build() if truth is None else truth
+    truth_model = WEIBULL_DEF.build() if truth is None else truth
     return run_repeat_simulation(
-        model_ctor=InverseGauss,
+        model_ctor=Weibull,
         truth=truth_model,
         num_pixels=SIM.num_pixels if num_pixels is None else num_pixels,
         time_interval=(
@@ -36,8 +37,5 @@ def run_inverse_gauss_simulation(
 
 
 if __name__ == "__main__":  # pragma: no cover
-    out, fits = run_inverse_gauss_simulation(
-        properties=("mean",),
-        prop_args={},
-    )
+    out, fits = run_weibull_simulation(properties=("mean",), prop_args={})
     print(out)

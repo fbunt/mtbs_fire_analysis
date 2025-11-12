@@ -163,13 +163,85 @@ class Weibull(SciPyParametric):
 
 
 # -----------------------------------------------------------------------------
+# Inverse Gaussian (Wald) using SciPy's invgauss; expose IG(mu, lam) params
+# Mapping to SciPy: if Y ~ invgauss(mu_s), X = scale * Y has
+#   E[X] = mu_s * scale, Var[X] = mu_s^3 * scale^2.
+# To match IG(mean=mu, shape=lam), set mu_s = mu/lam, scale = lam.
+# -----------------------------------------------------------------------------
+class InverseGauss(SciPyParametric):
+    def __init__(self, mu: float = 1.0, lam: float = 1.0) -> None:
+        super().__init__()
+        if mu <= 0 or lam <= 0:
+            raise ValueError("mu and lam must be positive.")
+        self._theta = np.array([np.log(mu), np.log(lam)], float)
+        self._refresh()
+
+    def _theta_get(self) -> np.ndarray:
+        return self._theta.copy()
+
+    def _theta_set(self, theta: np.ndarray) -> None:
+        self._theta = np.asarray(theta, float)
+        self._refresh()
+
+    def _refresh(self) -> None:
+        mu, lam = np.exp(self._theta)
+        mu_s = mu / lam
+        scale = lam
+        self._set_frozen(stats.invgauss(mu=mu_s, scale=scale))
+        self.mu, self.lam = float(mu), float(lam)
+
+    @property
+    def params(self) -> Dict[str, float]:
+        return {"mu": self.mu, "lam": self.lam}
+
+    def mean(self) -> float:  # closed form
+        return float(self.mu)
+
+    def default_bounds(self) -> Sequence[Tuple[float, float]]:
+        mu_min, mu_max = 1e-3, 1e4
+        lam_min, lam_max = 1e-3, 1e5
+        return [
+            (np.log(mu_min), np.log(mu_max)),
+            (np.log(lam_min), np.log(lam_max)),
+        ]
+
+    def _soft_penalty(self) -> float:
+        mu, lam = float(self.mu), float(self.lam)
+        if (
+            (not np.isfinite(mu))
+            or (not np.isfinite(lam))
+            or (mu <= 0.0)
+            or (lam <= 0.0)
+        ):
+            return 1e9
+        mu_lo, mu_hi = 1e-2, 1e3
+        lam_lo, lam_hi = 1e-2, 1e4
+        strength = 1e3
+        pen = 0.0
+        if mu < mu_lo:
+            d = (mu_lo - mu) / mu_lo
+            pen += d * d
+        elif mu > mu_hi:
+            d = (mu - mu_hi) / mu_hi
+            pen += d * d
+        if lam < lam_lo:
+            d = (lam_lo - lam) / lam_lo
+            pen += d * d
+        elif lam > lam_hi:
+            d = (lam - lam_hi) / lam_hi
+            pen += d * d
+        return float(strength * pen)
+
+
+# -----------------------------------------------------------------------------
 # Optional: hook in your bespoke HLH into the same registry if available
 # -----------------------------------------------------------------------------
 try:
-    # Your local file name may be `hlh_dist.py` with class `HalfLifeHazardDistribution`
-    from hlh_dist import HalfLifeHazardDistribution as HLH
+    # Your local file may be `hlh_dist.py` with class
+    # `HalfLifeHazardDistribution`
+    from hlh_dist import HalfLifeHazardDistribution
 except Exception:  # pragma: no cover — optional
-    HLH = None  # type: ignore
+    HalfLifeHazardDistribution = None  # type: ignore
 
 
 # -----------------------------------------------------------------------------
@@ -177,9 +249,10 @@ except Exception:  # pragma: no cover — optional
 # -----------------------------------------------------------------------------
 REGISTRY: Dict[str, Callable[..., BaseLifetime]] = {
     "weibull": lambda **kw: Weibull(**kw),
+    "invgauss": lambda **kw: InverseGauss(**kw),
 }
-if HLH is not None:
-    REGISTRY["hlh"] = lambda **kw: HLH(**kw)  # keep your existing API
+if HalfLifeHazardDistribution is not None:
+    REGISTRY["hlh"] = lambda **kw: HalfLifeHazardDistribution(**kw)
 
 
 # -----------------------------------------------------------------------------
@@ -188,19 +261,24 @@ if HLH is not None:
 if __name__ == "__main__":
     rng = np.random.default_rng(0)
 
-    # True model: Weibull(k=1.6, λ=10).  Generate a mix of: events, right‑censor,
+    # True model: Weibull(k=1.6, λ=10).  Generate a mix of: events,
+    # right‑censor,
     # initial forward gaps, and empty windows.
     true = Weibull(shape=1.6, scale=10.0)
 
     # events
-    dts = stats.weibull_min(c=true.shape, scale=true.scale).rvs(size=4000, random_state=rng)
+    dts = stats.weibull_min(c=true.shape, scale=true.scale).rvs(
+        size=4000, random_state=rng
+    )
 
     # right‑censor at t=8 (keep only those above 8 as survival observations)
     cens_thresh = 8.0
     survival = dts[dts > cens_thresh]
 
     # initial gaps (forward‑recurrence): sample gaps as independent draws too
-    gaps = stats.weibull_min(c=true.shape, scale=true.scale).rvs(size=1000, random_state=rng)
+    gaps = stats.weibull_min(c=true.shape, scale=true.scale).rvs(
+        size=1000, random_state=rng
+    )
 
     # empty windows: lengths between 8 and 15
     Ws = rng.uniform(8.0, 15.0, size=1000)
