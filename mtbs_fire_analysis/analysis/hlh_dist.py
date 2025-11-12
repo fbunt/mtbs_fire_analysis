@@ -24,6 +24,7 @@ import numpy as np
 from scipy.integrate import quad
 from scipy.optimize import minimize
 from scipy.special import digamma, gammainc, gammaln, lambertw
+from .lifetime_base import BaseLifetime
 
 LN2 = np.log(2.0)
 _EPS = 1e-12  # numeric safety guard for logs / divisions
@@ -32,7 +33,6 @@ _EPS = 1e-12  # numeric safety guard for logs / divisions
 # ---------------------------------------------------------------------------
 #  Distribution definition
 # ---------------------------------------------------------------------------
-from .lifetime_base import BaseLifetime
 
 
 class HalfLifeHazardDistribution(BaseLifetime):
@@ -67,7 +67,7 @@ class HalfLifeHazardDistribution(BaseLifetime):
         return self.hazard_inf * (-np.expm1(-self.lam * t))  # 1 − e^{−λt}
 
     def cum_hazard(self, t):
-        """Cumulative hazard *H(t)* = ∫₀ᵗ h(z) dz."""
+        """Cumulative hazard *H(t)* = ∫₀ᵗ h(z) dz."""
         t = np.asarray(t, float)
         e = np.exp(-self.lam * t)
         return self.hazard_inf * (t - (1.0 - e) / self.lam)
@@ -104,11 +104,11 @@ class HalfLifeHazardDistribution(BaseLifetime):
         return np.exp(log_mu)
 
     # --------------------- tail survival integral --------------------------
-    def tail_survival(self, W):
-        """∫_W^∞ S(z) dz (vectorised closed form)."""
-        W = np.asarray(W, float)
+    def tail_survival(self, w):
+        """∫_w^∞ S(z) dz (vectorised closed form)."""
+        w = np.asarray(w, float)
         k = self.hazard_inf / self.lam
-        x = k * np.exp(-self.lam * W)
+        x = k * np.exp(-self.lam * w)
         log_prefac = k - np.log(self.lam) - k * np.log(k)
         log_gamma_lower = np.log(np.maximum(gammainc(k, x), _EPS)) + gammaln(k)
         return np.exp(log_prefac + log_gamma_lower)
@@ -117,7 +117,7 @@ class HalfLifeHazardDistribution(BaseLifetime):
     # This is E[ h(T) | T ≥ W ] = ∫_W^∞ h(t) S(t) dt / ∫_W^∞ S(t) dt
     def expected_hazard_ge(
         self,
-        W: float,
+        w: float,
         rel_tol: float = 1e-9,
         abs_tol: float = 0.0,
         large_W_ratio: float = 8.0,
@@ -145,7 +145,7 @@ class HalfLifeHazardDistribution(BaseLifetime):
         """
 
         # -------------------------------- quick exit -------------------------
-        if W / self.half_life >= large_W_ratio:
+        if w / self.half_life >= large_W_ratio:
             return float(self.hazard_inf)
 
         # -------------------------------- log-integrand ----------------------
@@ -155,7 +155,6 @@ class HalfLifeHazardDistribution(BaseLifetime):
 
         def _log_integrand(t):
             """log[ h(t)**2 · S(t) ]  evaluated stably."""
-            e = np.exp(-lam * t)
             one_minus_e = -np.expm1(-lam * t)  # 1 − e^{−λt}
             log_h = ln_h_inf + np.log(one_minus_e + _EPS)
             cum_H = h_inf * (t - one_minus_e / lam)
@@ -164,7 +163,7 @@ class HalfLifeHazardDistribution(BaseLifetime):
         # -------------------------------- numerator --------------------------
         num = quad(
             lambda x: np.exp(_log_integrand(x)),
-            W,
+            w,
             np.inf,
             limit=200,
             epsrel=rel_tol,
@@ -172,7 +171,7 @@ class HalfLifeHazardDistribution(BaseLifetime):
         )[0]
 
         # -------------------------------- denominator ------------------------
-        log_S_W = -self.cum_hazard(W)  # already stable
+        log_S_W = -self.cum_hazard(w)  # already stable
         log_num = np.log(num + _EPS)
 
         return float(np.exp(log_num - log_S_W))
@@ -374,18 +373,16 @@ class HalfLifeHazardDistribution(BaseLifetime):
 
         # Empty windows -----------------------------------------------------
         if empty_windows is not None and empty_windows.size:
-            W = empty_windows
-            x_W = k * np.exp(-lam * W)
-            log_gamma_lower_x, term_x = (
-                HalfLifeHazardDistribution._common_terms(k, x_W)
-            )
-            theta_x = digamma(k) - np.log(k) + term_x  # Θ(k,x_W)
+            w = empty_windows
+            x_w = k * np.exp(-lam * w)
+            _, term_x = HalfLifeHazardDistribution._common_terms(k, x_w)
+            theta_x = digamma(k) - np.log(k) + term_x  # Θ(k,x_w)
 
             dlogT_dh = (1.0 / lam) * theta_x
 
             # dlogT/dλ  (see derivation)
-            dx_dlam = x_W * (
-                -h_inf / (lam**2 * k) - W
+            dx_dlam = x_w * (
+                -h_inf / (lam**2 * k) - w
             )  # derivative of x_W wrt λ
             dlogT_dl = (
                 (-h_inf / lam**2) * theta_x + dx_dlam * term_x - 1.0 / lam
@@ -405,7 +402,8 @@ class HalfLifeHazardDistribution(BaseLifetime):
     # ---------------------------------------------------------------------
     #  Public NLL wrapper (instance uses its own parameters) ----------------
     # ---------------------------------------------------------------------
-    # Use BaseLifetime.neg_log_likelihood (pdf/sf/mean/tail_survival already defined)
+    # Use BaseLifetime.neg_log_likelihood
+    # (pdf/sf/mean/tail_survival already defined)
 
     # ---------------------------------------------------------------------
     #  Maximum‑likelihood fit ----------------------------------------------
@@ -429,8 +427,9 @@ class HalfLifeHazardDistribution(BaseLifetime):
         """Maximum‑likelihood fit to any mix of observation types.
 
         * All *_counts* arrays are optional weights.
-        * Pass ``use_gradient=False`` to fall back to finite differences (or if
-          you change parameters and haven’t updated the derivative code yet).
+                                * Pass ``use_gradient=False`` for finite
+                                    differences (e.g. after parameter
+                                    changes without updated derivatives).
         """
         data = np.asarray(data, float)
         survival_data = (
@@ -452,9 +451,16 @@ class HalfLifeHazardDistribution(BaseLifetime):
         # --- Soft penalty to keep the search in a practical region --------
         #    Smooth quadratic outside a domain-informed box.
         def _soft_penalty_from_theta(theta_log):
-            h_inf, tau, _ = HalfLifeHazardDistribution._theta_to_params(theta_log)
+            h_inf, tau, _ = HalfLifeHazardDistribution._theta_to_params(
+                theta_log
+            )
             # Guard invalids hard
-            if (not np.isfinite(h_inf)) or (not np.isfinite(tau)) or h_inf <= 0.0 or tau <= 0.0:
+            if (
+                (not np.isfinite(h_inf))
+                or (not np.isfinite(tau))
+                or h_inf <= 0.0
+                or tau <= 0.0
+            ):
                 return 1e9
             # Preferred box (adjust as needed)
             h_lo, h_hi = 1e-4, 1.0
@@ -477,16 +483,18 @@ class HalfLifeHazardDistribution(BaseLifetime):
 
         def _objective_with_penalty(theta_log):  # finite-diff path
             try:
-                nll = HalfLifeHazardDistribution._neg_log_likelihood_for_params(
-                    theta_log,
-                    data,
-                    data_counts,
-                    survival_data,
-                    survival_counts,
-                    initial_gaps,
-                    initial_counts,
-                    empty_windows,
-                    empty_counts,
+                nll = (
+                    HalfLifeHazardDistribution._neg_log_likelihood_for_params(
+                        theta_log,
+                        data,
+                        data_counts,
+                        survival_data,
+                        survival_counts,
+                        initial_gaps,
+                        initial_counts,
+                        empty_windows,
+                        empty_counts,
+                    )
                 )
             except Exception:
                 return 1e12
@@ -497,7 +505,8 @@ class HalfLifeHazardDistribution(BaseLifetime):
             return float(total)
 
         if use_gradient:
-            # Gradient path (no soft penalty term in jac; use when you trust initialisation)
+            # Gradient path (no soft penalty term in jac; use when you
+            # trust initialisation)
             res = minimize(
                 self._neg_log_likelihood_for_params,
                 theta0,
@@ -566,7 +575,12 @@ class HalfLifeHazardDistribution(BaseLifetime):
     def _soft_penalty(self) -> float:
         h_inf = self.hazard_inf
         tau = self.half_life
-        if (not np.isfinite(h_inf)) or (not np.isfinite(tau)) or h_inf <= 0 or tau <= 0:
+        if (
+            (not np.isfinite(h_inf))
+            or (not np.isfinite(tau))
+            or h_inf <= 0
+            or tau <= 0
+        ):
             return 1e9
         h_lo, h_hi = 1e-4, 1.0
         t_lo, t_hi = 0.5, 200.0

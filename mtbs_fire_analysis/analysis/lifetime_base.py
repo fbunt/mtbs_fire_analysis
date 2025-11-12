@@ -57,6 +57,57 @@ class BaseLifetime:
         den = np.log(max(float(tail), _EPS))
         return float(np.exp(num - den))
 
+    # --- lightweight health check (cheap) -------------------------------
+    def quick_health(self) -> dict:
+        """Cheap post-fit health signal.
+
+        Criteria (no data re-evaluation):
+        - params dict exists and all numeric, finite
+        - mean finite and positive
+        - theta not sitting exactly on provided/default bounds
+        Returns dict with 'ok' bool and 'issues' list.
+        """
+        issues: list[str] = []
+        params = getattr(self, "params", None)
+        if not isinstance(params, dict) or not params:
+            issues.append("no_params")
+        else:
+            for k, v in params.items():
+                try:
+                    val = float(v)
+                except Exception:
+                    issues.append(f"non_numeric:{k}")
+                    continue
+                if not np.isfinite(val):
+                    issues.append(f"non_finite:{k}")
+                if val == 0.0:
+                    issues.append(f"zero_value:{k}")
+        # mean
+        try:
+            m = float(self.mean())
+            if (not np.isfinite(m)) or (m <= 0.0):
+                issues.append("mean_invalid")
+        except Exception:
+            issues.append("mean_error")
+        # bounds proximity (exactly at lo or hi)
+        try:
+            theta = np.asarray(self._theta_get(), float)
+            bounds = None
+            if hasattr(self, "default_bounds"):
+                try:
+                    bounds = self.default_bounds()  # type: ignore[attr-defined]
+                except Exception:
+                    bounds = None
+            if bounds is not None and len(bounds) == len(theta):
+                for t, (lo, hi) in zip(theta, bounds, strict=True):
+                    if np.isfinite(lo) and t <= lo:
+                        issues.append("at_lower_bound")
+                    if np.isfinite(hi) and t >= hi:
+                        issues.append("at_upper_bound")
+        except Exception:
+            issues.append("theta_error")
+        return {"ok": len(issues) == 0, "issues": issues}
+
     # --- generic negative log-likelihood ---------------------------------
     def neg_log_likelihood(
         self,
@@ -76,7 +127,9 @@ class BaseLifetime:
         if data is not None and len(data):
             x = np.asarray(data, float)
             wts = (
-                np.ones_like(x) if data_counts is None else np.asarray(data_counts, float)
+                np.ones_like(x)
+                if data_counts is None
+                else np.asarray(data_counts, float)
             )
             p = self.pdf(x)
             p = np.nan_to_num(p, nan=0.0, posinf=0.0, neginf=0.0)

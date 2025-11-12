@@ -79,6 +79,8 @@ def run_hlh_simulation(
             fit_outs["dt_only"].append(
                 get_values(dt_only_fitter, properties, prop_args)
             )
+            if not dt_only_fitter.quick_health()["ok"]:
+                fail_counts["dt_only"] += 1
         except RuntimeError:
             fail_counts["dt_only"] += 1
 
@@ -89,6 +91,8 @@ def run_hlh_simulation(
             fit_outs["dtct"].append(
                 get_values(dtct_fitter, properties, prop_args)
             )
+            if not dtct_fitter.quick_health()["ok"]:
+                fail_counts["dtct"] += 1
         except RuntimeError:
             fail_counts["dtct"] += 1
 
@@ -107,6 +111,8 @@ def run_hlh_simulation(
             fit_outs["dtctut"].append(
                 get_values(dtctut_fitter, properties, prop_args)
             )
+            if not dtctut_fitter.quick_health()["ok"]:
+                fail_counts["dtctut"] += 1
         except RuntimeError:
             fail_counts["dtctut"] += 1
 
@@ -127,6 +133,8 @@ def run_hlh_simulation(
             fit_outs["dtctutet"].append(
                 get_values(dtctutet_fitter, properties, prop_args)
             )
+            if not dtctutet_fitter.quick_health()["ok"]:
+                fail_counts["dtctutet"] += 1
         except RuntimeError:
             fail_counts["dtctutet"] += 1
 

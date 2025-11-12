@@ -182,118 +182,6 @@ def create_sample_data_all(
     )
 
 
-# %%
-def create_sample_data_all_old(
-    num_pixels: int,
-    time_interval: float,
-    truth,
-    start_up_time: float = 0.0,
-    round_to_nearest: float | None = None,
-):
-    """
-    Simulate fire-history data and return the four disjoint observation types
-    needed for the likelihood:
-
-    • dt   – fully-observed inter-fire intervals **inside** the window
-    • ut   – forward-recurrence intervals from the window start to first fire
-    • ct   – right-censor times from last fire to the window end
-    • n0   – number of pixels with *no* fire in the window
-
-    Parameters
-    ----------
-    num_pixels      : int
-        Number of independent pixels.
-    time_interval   : float
-        Length of the observation window (years, months, …).
-    truth           : distribution object with an ``rvs(size=…)`` method.
-    start_up_time   : float, default 0
-        “Burn-in” time simulated *before* the window opens.
-    round_to_nearest: float or None, default None
-        If given, round every dt/ut/ct to the nearest multiple of this value
-        and return *counts* for the unique rounded times.  When ``None`` each
-        observation is kept in full precision and its count is 1.
-
-    Returns
-    -------
-    dts, dt_count,
-    uts, ut_count,
-    cts, ct_count : 1-D ``np.ndarray`` pairs
-        Either the full lists (if ``round_to_nearest is None``) or the unique
-        rounded values with their multiplicities.
-    n0            : int
-        Number of pixels with zero events inside the window.
-    """
-
-    # ------------------------------------------------------------------ helpers
-    def _aggregate(values, step):
-        """Round to nearest *step* and collapse duplicates."""
-        if not len(values):
-            return np.empty(0, float), np.empty(0, int)
-
-        if step is None:
-            return np.asarray(values, float), np.ones(len(values), int)
-
-        rounded = np.round(np.asarray(values) / step) * step
-        uniq, counts = np.unique(rounded, return_counts=True)
-        return uniq.astype(float), counts.astype(int)
-
-    # ------------------------------------------------------------------ simulate
-    dts, uts, cts = [], [], []
-    n0 = 0  # pixels with no events in the window
-
-    total_time = start_up_time + time_interval
-
-    rng = np.random.default_rng()  # single generator for reproducibility
-
-    for _ in range(num_pixels):
-        t = 0.0
-        fires = []
-
-        # draw successive inter-fire intervals until we run past total_time
-        while True:
-            dt = truth.rvs(size=1, rng=rng)[0]
-            if t + dt > total_time:
-                break
-            t += dt
-            fires.append(t)
-
-        # ---------------------------------------------------------------- events
-        # Any fire ≥ start_up_time is within the observation window
-        in_window = [f for f in fires if f >= start_up_time]
-
-        if not in_window:
-            # zero events ⇒ whole window is right-censored but we treat these
-            # pixels as a count, not individual ct observations.
-            n0 += 1
-            continue
-
-        # forward-recurrence (window start → first fire)
-        uts.append(in_window[0] - start_up_time)
-
-        # fully-observed intervals *between* fires inside the window
-        for i in range(1, len(in_window)):
-            dts.append(in_window[i] - in_window[i - 1])
-
-        # right-censor (last fire → window end)
-        cts.append(total_time - in_window[-1])
-
-    # ------------------------------------------------------------------ output
-    dts, dt_count = _aggregate(dts, round_to_nearest)
-    uts, ut_count = _aggregate(uts, round_to_nearest)
-    cts, ct_count = _aggregate(cts, round_to_nearest)
-
-    return (
-        dts,
-        dt_count,
-        uts,
-        ut_count,
-        cts,
-        ct_count,
-        np.array([time_interval]),
-        np.array([n0]),
-    )
-
-
 def evaluate_fits(dts, last_times, fits, names=None):
     """
     Outputs fitted params, neg log likelihood in print statements.
@@ -381,7 +269,6 @@ def output_plots(dts, last_times, fits, folder, names=None):
         names = [f"Fit {i}" for i in range(len(fits))]
 
     for fit, name in zip(fits, names, strict=True):
-        # cd.plot_fit(fit, dts, last_times, out_dir / (prefix+f"{name}Fit.png"))
         cd.plot_fit(
             fit,
             dts,
