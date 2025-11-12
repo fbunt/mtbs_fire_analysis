@@ -4,6 +4,7 @@ import math
 import unittest
 
 from mtbs_fire_analysis.analysis.lifetime_base import BaseLifetime
+from mtbs_fire_analysis.analysis.registry import REGISTRY
 from mtbs_fire_analysis.analysis.statistical_tests.defaults import (
     HLH_DEF,
     IG_DEF,
@@ -83,6 +84,11 @@ class BurnInHeuristicTest(unittest.TestCase):
 
     def test_inverse_gauss_default_burnin(self):
         self._check_model(IG_DEF.build())
+
+    def test_registry_has_tests(self):
+        """Fail if registry adds dists without tests here (coverage guard)."""
+        expected = {"hlh", "weibull", "invgauss"}
+        self.assertEqual(set(REGISTRY.keys()), expected)
 
 
 if __name__ == "__main__":  # pragma: no cover

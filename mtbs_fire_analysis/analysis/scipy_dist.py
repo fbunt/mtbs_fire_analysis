@@ -27,12 +27,13 @@ Usage (see __main__ at bottom for a runnable example):
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Callable, Dict, Iterable, Optional, Sequence, Tuple
+import warnings
+from typing import Dict, Optional, Sequence, Tuple
 
 import numpy as np
-from scipy import integrate, optimize, stats
+from scipy import integrate, stats
 from scipy.special import gamma, gammaincc
+
 from .lifetime_base import BaseLifetime
 
 _EPS = 1e-300  # numeric safety for logs/divisions
@@ -54,13 +55,32 @@ class SciPyParametric(BaseLifetime):
 
     # ---- BaseLifetime primitives use the frozen rv ------------------------
     def pdf(self, x):
-        return self._rv.pdf(x)  # type: ignore[arg-type]
+        # Guard SciPy warnings from extreme interim parameter proposals
+        with np.errstate(
+            over="ignore",
+            under="ignore",
+            invalid="ignore",
+            divide="ignore",
+        ):
+            return self._rv.pdf(x)  # type: ignore[arg-type]
 
     def sf(self, x):
-        return self._rv.sf(x)  # type: ignore[arg-type]
+        with np.errstate(
+            over="ignore",
+            under="ignore",
+            invalid="ignore",
+            divide="ignore",
+        ):
+            return self._rv.sf(x)  # type: ignore[arg-type]
 
     def mean(self) -> float:
-        m = float(self._rv.mean())
+        with np.errstate(
+            over="ignore",
+            under="ignore",
+            invalid="ignore",
+            divide="ignore",
+        ):
+            m = float(self._rv.mean())
         if np.isfinite(m):
             return m
         # Fallback numeric mean via ∫_0^∞ S(u) du when SciPy returns inf
@@ -109,38 +129,65 @@ class Weibull(SciPyParametric):
     def params(self) -> Dict[str, float]:
         return {"shape": self.shape, "scale": self.scale}
 
-    # Closed-form tail survival integral: ∫_W^∞ S(t) dt = (λ / k) Γ(1/k, (W/λ)^k)
+    # Closed-form tail survival integral:
+    #   ∫_W^∞ S(t) dt = (λ / k) Γ(1/k, (W/λ)^k)
     def tail_survival(self, w: np.ndarray | float) -> np.ndarray | float:  # type: ignore[override]
         w_arr = np.atleast_1d(np.asarray(w, float))
         k, lam = float(self.shape), float(self.scale)
-        # Guard invalid parameters to avoid crashes inside optimizer explorations
-        if (not np.isfinite(k)) or (not np.isfinite(lam)) or (k <= 0.0) or (lam <= 0.0):
+        # Guard invalid parameters to avoid crashes inside optimizer
+        # explorations
+        if (
+            (not np.isfinite(k))
+            or (not np.isfinite(lam))
+            or (k <= 0.0)
+            or (lam <= 0.0)
+        ):
             bad = np.full_like(w_arr, np.inf, dtype=float)
             return bad if np.ndim(w) else float(bad[0])
         a = 1.0 / k
-        u = np.maximum(w_arr / lam, 0.0) ** k
-        tail = (lam / k) * gamma(a) * gammaincc(a, u)
+        x = np.maximum(w_arr / lam, 0.0)
+        # Compute u = x**k safely: if k*log(x) > log(max_float), set u=inf
+        log_max = np.log(np.finfo(float).max)
+        with np.errstate(over="ignore", under="ignore", invalid="ignore"):
+            logu = k * np.log(np.maximum(x, _EPS))
+            u = np.where(logu > log_max, np.inf, np.exp(logu))
+            tail = (lam / k) * gamma(a) * gammaincc(a, u)
         return tail if np.ndim(w) else float(tail[0])
 
     def mean(self) -> float:
         """Closed-form Weibull mean: μ = λ Γ(1 + 1/k)."""
         k, lam = float(self.shape), float(self.scale)
-        if (not np.isfinite(k)) or (not np.isfinite(lam)) or (k <= 0.0) or (lam <= 0.0):
+        if (
+            (not np.isfinite(k))
+            or (not np.isfinite(lam))
+            or (k <= 0.0)
+            or (lam <= 0.0)
+        ):
             return np.inf
         val = lam * gamma(1.0 + 1.0 / k)
         return float(val) if np.isfinite(val) else np.inf
 
-    # Reasonable, wide bounds in log-space to keep optimizer from k→0 or extreme λ
+    # Reasonable, wide bounds in log-space to keep optimizer from k→0 or
+    # extreme λ
     def default_bounds(self) -> Sequence[Tuple[float, float]]:
         k_min, k_max = 1e-3, 1e3
         lam_min, lam_max = 1e-3, 1e5
-        return [(np.log(k_min), np.log(k_max)), (np.log(lam_min), np.log(lam_max))]
+        return [
+            (np.log(k_min), np.log(k_max)),
+            (np.log(lam_min), np.log(lam_max)),
+        ]
 
-    # Soft penalty to keep search in a practical region; smooth quadratic outside box
+    # Soft penalty to keep search in a practical region; smooth quadratic
+    # outside box
     def _soft_penalty(self) -> float:
         k, lam = float(self.shape), float(self.scale)
         # Heavy penalty if invalid to steer optimizer away quickly
-        if (not np.isfinite(k)) or (not np.isfinite(lam)) or (k <= 0.0) or (lam <= 0.0):
+        if (
+            (not np.isfinite(k))
+            or (not np.isfinite(lam))
+            or (k <= 0.0)
+            or (lam <= 0.0)
+        ):
             return 1e9
         # Preferred box (domain-specific; adjust if needed)
         k_lo, k_hi = 0.3, 10.0
@@ -197,6 +244,42 @@ class InverseGauss(SciPyParametric):
     def mean(self) -> float:  # closed form
         return float(self.mu)
 
+    def tail_survival(self, w: np.ndarray | float) -> np.ndarray | float:  # type: ignore[override]
+        """Numeric tail integral with guards for tiny survival values.
+
+        Avoids quad warnings for extremely small S(W) by short-circuiting
+        to 0.0 when S(W) is below a tiny threshold. Uses a slightly
+        looser tolerance than the BaseLifetime default to improve
+        robustness for this distribution.
+        """
+        w_arr = np.atleast_1d(np.asarray(w, float))
+        out = np.empty_like(w_arr, dtype=float)
+        for i, w0 in enumerate(w_arr):
+            with np.errstate(
+                over="ignore",
+                under="ignore",
+                invalid="ignore",
+                divide="ignore",
+            ):
+                s_w = float(self.sf(w0))
+            if (not np.isfinite(s_w)) or (s_w < 1e-14):
+                out[i] = 0.0
+                continue
+            with warnings.catch_warnings():
+                warnings.simplefilter(
+                    "ignore", category=integrate.IntegrationWarning
+                )
+                val = integrate.quad(
+                    lambda z: float(max(self.sf(z), 0.0)),
+                    float(max(w0, 0.0)),
+                    np.inf,
+                    epsrel=1e-6,
+                    epsabs=0.0,
+                    limit=200,
+                )[0]
+            out[i] = float(val)
+        return out if np.ndim(w) else float(out[0])
+
     def default_bounds(self) -> Sequence[Tuple[float, float]]:
         mu_min, mu_max = 1e-3, 1e4
         lam_min, lam_max = 1e-3, 1e5
@@ -233,26 +316,7 @@ class InverseGauss(SciPyParametric):
         return float(strength * pen)
 
 
-# -----------------------------------------------------------------------------
-# Optional: hook in your bespoke HLH into the same registry if available
-# -----------------------------------------------------------------------------
-try:
-    # Your local file may be `hlh_dist.py` with class
-    # `HalfLifeHazardDistribution`
-    from hlh_dist import HalfLifeHazardDistribution
-except Exception:  # pragma: no cover — optional
-    HalfLifeHazardDistribution = None  # type: ignore
-
-
-# -----------------------------------------------------------------------------
-# Distribution registry
-# -----------------------------------------------------------------------------
-REGISTRY: Dict[str, Callable[..., BaseLifetime]] = {
-    "weibull": lambda **kw: Weibull(**kw),
-    "invgauss": lambda **kw: InverseGauss(**kw),
-}
-if HalfLifeHazardDistribution is not None:
-    REGISTRY["hlh"] = lambda **kw: HalfLifeHazardDistribution(**kw)
+# Note: Global registry was moved to mtbs_fire_analysis.analysis.registry
 
 
 # -----------------------------------------------------------------------------

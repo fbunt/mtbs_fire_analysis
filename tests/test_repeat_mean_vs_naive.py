@@ -5,6 +5,7 @@ import unittest
 from mtbs_fire_analysis.analysis.hlh_dist import (
     HalfLifeHazardDistribution,
 )
+from mtbs_fire_analysis.analysis.registry import REGISTRY
 from mtbs_fire_analysis.analysis.scipy_dist import InverseGauss, Weibull
 from mtbs_fire_analysis.analysis.statistical_tests.repeat_helpers import (
     run_repeat_simulation,
@@ -67,6 +68,11 @@ class RepeatMeanVsNaiveTest(unittest.TestCase):
         # Snapshot of current defaults: mu=75.0, lam=200.0
         truth = InverseGauss(mu=75.0, lam=200.0)
         self._check_dist(truth)
+
+    def test_registry_has_tests(self):
+        """Fail if registry adds dists without tests here (coverage guard)."""
+        expected = {"hlh", "weibull", "invgauss"}
+        self.assertEqual(set(REGISTRY.keys()), expected)
 
 
 if __name__ == "__main__":  # pragma: no cover
