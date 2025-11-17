@@ -245,6 +245,10 @@ def _build_dataframe_and_save(
     points["lat"] = lat
     lon = None
     lat = None
+    print("Adding lon/lat")
+    x, y = hasher.geohash_to_xy(points.geohash.to_numpy())
+    points["x"] = x
+    points["y"] = y
 
     points = _drop_duplicates(points)
     print(
