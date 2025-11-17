@@ -7,6 +7,7 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import polars as pl
+import pyarrow
 import raster_tools as rts
 import xarray as xr
 from dask.diagnostics import ProgressBar
@@ -266,6 +267,7 @@ def _build_dataframe_and_save(
     )
 
     points = _add_raster(points, mtbs_path, "bs", burned_indices, how="left")
+    points = points.astype({"bs": pd.ArrowDtype(pyarrow.int8())})
     print(
         f"Size after join(bs): {len(points):,}"
         f" Loss/gain: {(len(points) - n):+,}"
