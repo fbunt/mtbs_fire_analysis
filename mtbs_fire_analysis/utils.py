@@ -7,6 +7,11 @@ from dask.diagnostics import ProgressBar
 
 
 def flatmap(func, iterable):
+    """
+    Take func, which can return a single result or list of results and map it
+    on to the elements of iterable. Then flatten the resulting list of
+    lists/elements into a flat list of results.
+    """
     return itertools.chain.from_iterable(map(func, iterable))
 
 
