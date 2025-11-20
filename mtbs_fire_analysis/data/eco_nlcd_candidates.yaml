@@ -1,21 +1,19 @@
 main2:
-- name: 'North Cascades : Schrub'
+- name: 'Middle Rockies : Grassland'
   eco_lvl_3:
-  - 6205
-  nlcd:
-  - 52
-- name: 'Southern Coastal Plain : Forest'
-  eco_lvl_3:
-  - 8503
-  nlcd:
-  - 41
-  - 42
-  - 43
-- name: 'Southern Coastal Plain : Grassland'
-  eco_lvl_3:
-  - 8503
+  - 6210
   nlcd:
   - 71
+- name: 'Southeastern Plains : Grassland'
+  eco_lvl_3:
+  - 8305
+  nlcd:
+  - 71
+- name: 'Cascades : Schrub'
+  eco_lvl_3:
+  - 6207
+  nlcd:
+  - 52
 - name: 'Arizona+New Mexico Mountains : Forest'
   eco_lvl_3:
   - 13101
@@ -28,11 +26,6 @@ main2:
   - 10102
   nlcd:
   - 52
-- name: 'Columbia Mountains+Northern Rockies : Grassland'
-  eco_lvl_3:
-  - 6203
-  nlcd:
-  - 71
 - name: 'California Coastal Sage, Chaparral, and Oak Woodlands : Forest'
   eco_lvl_3:
   - 11101
@@ -40,16 +33,6 @@ main2:
   - 41
   - 42
   - 43
-- name: 'California Coastal Sage, Chaparral, and Oak Woodlands : Grassland'
-  eco_lvl_3:
-  - 11101
-  nlcd:
-  - 71
-- name: 'Sierra Nevada : Schrub'
-  eco_lvl_3:
-  - 6212
-  nlcd:
-  - 52
 - name: 'Sierra Nevada : Forest'
   eco_lvl_3:
   - 6212
@@ -57,6 +40,21 @@ main2:
   - 41
   - 42
   - 43
+- name: 'Sierra Nevada : Schrub'
+  eco_lvl_3:
+  - 6212
+  nlcd:
+  - 52
+- name: 'California Coastal Sage, Chaparral, and Oak Woodlands : Grassland'
+  eco_lvl_3:
+  - 11101
+  nlcd:
+  - 71
+- name: 'Columbia Mountains+Northern Rockies : Grassland'
+  eco_lvl_3:
+  - 6203
+  nlcd:
+  - 71
 - name: 'Southern Coastal Plain : Wetland'
   eco_lvl_3:
   - 8503
@@ -76,11 +74,6 @@ main2:
   - 41
   - 42
   - 43
-- name: 'Idaho Batholith : Schrub'
-  eco_lvl_3:
-  - 6215
-  nlcd:
-  - 52
 - name: 'Idaho Batholith : Forest'
   eco_lvl_3:
   - 6215
@@ -88,6 +81,16 @@ main2:
   - 41
   - 42
   - 43
+- name: 'Idaho Batholith : Schrub'
+  eco_lvl_3:
+  - 6215
+  nlcd:
+  - 52
+- name: 'California Coastal Sage, Chaparral, and Oak Woodlands : Schrub'
+  eco_lvl_3:
+  - 11101
+  nlcd:
+  - 52
 - name: 'Southern and Baja California Pine-Oak Mountains : Forest'
   eco_lvl_3:
   - 11103
@@ -95,11 +98,6 @@ main2:
   - 41
   - 42
   - 43
-- name: 'California Coastal Sage, Chaparral, and Oak Woodlands : Schrub'
-  eco_lvl_3:
-  - 11101
-  nlcd:
-  - 52
 - name: 'Chihuahuan Desert : Forest'
   eco_lvl_3:
   - 10204
@@ -124,6 +122,11 @@ main2:
   - 10102
   nlcd:
   - 71
+- name: 'Canadian Rockies : Grassland'
+  eco_lvl_3:
+  - 6204
+  nlcd:
+  - 71
 - name: 'Southern Rockies : Grassland'
   eco_lvl_3:
   - 6214
@@ -139,45 +142,25 @@ main2:
   - 6211
   nlcd:
   - 52
-- name: 'Cascades : Grassland'
-  eco_lvl_3:
-  - 6207
-  nlcd:
-  - 71
 - name: 'Eastern Cascades Slopes and Foothills : Grassland'
   eco_lvl_3:
   - 6208
   nlcd:
   - 71
-- name: 'Southern Coastal Plain : Schrub'
+- name: 'Mojave Basin and Range : Grassland'
   eco_lvl_3:
-  - 8503
+  - 10201
   nlcd:
-  - 52
+  - 71
 - name: 'Southern Florida Coastal Plain : Wetland'
   eco_lvl_3:
   - 15401
   nlcd:
   - 90
   - 95
-- name: 'Mojave Basin and Range : Grassland'
-  eco_lvl_3:
-  - 10201
-  nlcd:
-  - 71
-- name: 'Canadian Rockies : Grassland'
-  eco_lvl_3:
-  - 6204
-  nlcd:
-  - 71
 - name: 'North Cascades : Grassland'
   eco_lvl_3:
   - 6205
-  nlcd:
-  - 71
-- name: 'Idaho Batholith : Grassland'
-  eco_lvl_3:
-  - 6215
   nlcd:
   - 71
 - name: 'Snake River Plain : Grassland'
@@ -185,11 +168,11 @@ main2:
   - 10108
   nlcd:
   - 71
-- name: 'Klamath Mountains : Grassland'
+- name: 'Southern Coastal Plain : Schrub'
   eco_lvl_3:
-  - 6211
+  - 8503
   nlcd:
-  - 71
+  - 52
 - name: 'Central Basin and Range : Grassland'
   eco_lvl_3:
   - 10105
@@ -200,18 +183,18 @@ main2:
   - 10103
   nlcd:
   - 71
+- name: 'Idaho Batholith : Grassland'
+  eco_lvl_3:
+  - 6215
+  nlcd:
+  - 71
 - name: 'Southern and Baja California Pine-Oak Mountains : Grassland'
   eco_lvl_3:
   - 11103
   nlcd:
   - 71
-- name: 'Sierra Nevada : Grassland'
+- name: 'Klamath Mountains : Grassland'
   eco_lvl_3:
-  - 6212
-  nlcd:
-  - 71
-- name: 'Arizona+New Mexico Mountains : Grassland'
-  eco_lvl_3:
-  - 13101
+  - 6211
   nlcd:
   - 71
