@@ -20,7 +20,7 @@ def _summarize_samples(name: str, x: np.ndarray) -> dict:
     # Basic stats
     mean = float(np.mean(x))
     med = float(np.median(x))
-    var = float(np.var(x))
+    std = float(np.std(x))
     sk = float(skew(x, bias=False))
     kurt = float(kurtosis(x, fisher=False, bias=False))
     # Percentiles
@@ -31,7 +31,7 @@ def _summarize_samples(name: str, x: np.ndarray) -> dict:
         "dist": name,
         "mean": mean,
         "median": med,
-        "variance": var,
+        "std_dev": std,
         "skew": sk,
         "kurtosis": kurt,
         **pct_cols,
@@ -39,7 +39,7 @@ def _summarize_samples(name: str, x: np.ndarray) -> dict:
 
 
 essential_cols = (
-    ["dist", "mean", "median", "variance", "skew", "kurtosis"]
+    ["dist", "mean", "median", "std_dev", "skew", "kurtosis"]
     + [f"p{p:g}" for p in PCTS]
 )
 

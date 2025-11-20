@@ -25,6 +25,7 @@ from scipy.integrate import quad
 from scipy.optimize import minimize
 from scipy.special import digamma, gammainc, gammaln, lambertw
 from .lifetime_base import BaseLifetime
+from .default_params import HLH_DEFAULTS
 
 LN2 = np.log(2.0)
 _EPS = 1e-12  # numeric safety guard for logs / divisions
@@ -39,7 +40,11 @@ class HalfLifeHazardDistribution(BaseLifetime):
     """Lifetime model with asymptoting hazard (see module docstring)."""
 
     # ------------------------- construction --------------------------------
-    def __init__(self, hazard_inf: float = 0.1, half_life: float = 10.0):
+    def __init__(
+        self,
+        hazard_inf: float = HLH_DEFAULTS["hazard_inf"],
+        half_life: float = HLH_DEFAULTS["half_life"],
+    ):
         if hazard_inf <= 0 or half_life <= 0:
             raise ValueError("hazard_inf and half_life must be positive.")
         self.hazard_inf = float(hazard_inf)
@@ -567,12 +572,16 @@ class HalfLifeHazardDistribution(BaseLifetime):
         self.lam = LN2 / float(tau)
 
     def default_bounds(self):
-        return (
-            (np.log(1e-12), np.log(10.0)),
-            (np.log(1e-5), np.log(1e5)),
-        )
+        from .fit_constraints import get_bounds_log_for
+        b = get_bounds_log_for(type(self).__name__)
+        return tuple(b)
 
     def _soft_penalty(self) -> float:
+        from .fit_constraints import (
+            get_soft_box_for,
+            get_penalty_strength_for,
+            penalty_scale_factor,
+        )
         h_inf = self.hazard_inf
         tau = self.half_life
         if (
@@ -582,20 +591,29 @@ class HalfLifeHazardDistribution(BaseLifetime):
             or tau <= 0
         ):
             return 1e9
-        h_lo, h_hi = 1e-4, 1.0
-        t_lo, t_hi = 0.5, 200.0
-        strength = 1e3
+        sb = get_soft_box_for(type(self).__name__)
+        h_lo, h_hi = sb.get("hazard_inf", (1e-4, 1.0))
+        t_lo, t_hi = sb.get("half_life", (0.5, 200.0))
+        strength = get_penalty_strength_for(type(self).__name__) or 1e3
+        # Switch to LOG-space penalty so multiplicative deviations are
+        # symmetric and consistent with optimiser coordinates.
         pen = 0.0
-        if h_inf < h_lo:
-            d = (h_lo - h_inf) / h_lo
+        s_h, s_t = np.log(h_inf), np.log(tau)
+        s_h_lo, s_h_hi = np.log(h_lo), np.log(h_hi)
+        s_t_lo, s_t_hi = np.log(t_lo), np.log(t_hi)
+        w_h = max(s_h_hi - s_h_lo, 1e-12)
+        w_t = max(s_t_hi - s_t_lo, 1e-12)
+        if s_h < s_h_lo:
+            d = (s_h_lo - s_h) / w_h
             pen += d * d
-        elif h_inf > h_hi:
-            d = (h_inf - h_hi) / h_hi
+        elif s_h > s_h_hi:
+            d = (s_h - s_h_hi) / w_h
             pen += d * d
-        if tau < t_lo:
-            d = (t_lo - tau) / t_lo
+        if s_t < s_t_lo:
+            d = (s_t_lo - s_t) / w_t
             pen += d * d
-        elif tau > t_hi:
-            d = (tau - t_hi) / t_hi
+        elif s_t > s_t_hi:
+            d = (s_t - s_t_hi) / w_t
             pen += d * d
-        return float(strength * pen)
+        n_eff = getattr(self, "_fit_n_eff", 0.0)
+        return float(strength * penalty_scale_factor(n_eff) * pen)

@@ -2,42 +2,39 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from mtbs_fire_analysis.analysis.default_params import (
+    HLHDefaults as _HLHDefaults,
+    InverseGaussDefaults as _InverseGaussDefaults,
+    SimulationDefaults as _SimulationDefaults,
+    WeibullDefaults as _WeibullDefaults,
+)
 from mtbs_fire_analysis.analysis.hlh_dist import HalfLifeHazardDistribution
 from mtbs_fire_analysis.analysis.scipy_dist import InverseGauss, Weibull
 
 
-@dataclass(frozen=True)
-class SimulationDefaults:
-    num_pixels: int = 5000
-    time_interval: int = 39
-    iterations: int = 100
-    pre_window: int = 500
-    random_seed: int = 1989
+# Re-export dataclasses at this location for backward compatibility and
+# provide build() helpers used by statistical tests
 
 
 @dataclass(frozen=True)
-class HLHDefaults:
-    hazard_inf: float = 0.03
-    half_life: float = 50.0
+class SimulationDefaults(_SimulationDefaults):
+    pass
 
+
+@dataclass(frozen=True)
+class HLHDefaults(_HLHDefaults):
     def build(self) -> HalfLifeHazardDistribution:
         return HalfLifeHazardDistribution(self.hazard_inf, self.half_life)
 
 
 @dataclass(frozen=True)
-class WeibullDefaults:
-    shape: float = 1.5
-    scale: float = 85.0
-
+class WeibullDefaults(_WeibullDefaults):
     def build(self) -> Weibull:
         return Weibull(shape=self.shape, scale=self.scale)
 
 
 @dataclass(frozen=True)
-class InverseGaussDefaults:
-    mu: float = 75.0
-    lam: float = 200.0
-
+class InverseGaussDefaults(_InverseGaussDefaults):
     def build(self) -> InverseGauss:
         return InverseGauss(mu=self.mu, lam=self.lam)
 

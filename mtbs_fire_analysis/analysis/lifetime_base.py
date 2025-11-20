@@ -15,6 +15,12 @@ from typing import Dict, Optional, Sequence, Tuple
 import numpy as np
 from scipy import integrate, optimize
 
+from .fit_constraints import (
+    POLICY,
+    get_bounds_log_for,
+    get_soft_box_for,
+)
+
 _EPS = 1e-300
 _QUAD_OPTS = {"epsrel": 1e-9, "epsabs": 0.0, "limit": 200}
 
@@ -89,23 +95,48 @@ class BaseLifetime:
                 issues.append("mean_invalid")
         except Exception:
             issues.append("mean_error")
-        # bounds proximity (exactly at lo or hi)
-        try:
-            theta = np.asarray(self._theta_get(), float)
-            bounds = None
-            if hasattr(self, "default_bounds"):
-                try:
-                    bounds = self.default_bounds()  # type: ignore[attr-defined]
-                except Exception:
-                    bounds = None
-            if bounds is not None and len(bounds) == len(theta):
-                for t, (lo, hi) in zip(theta, bounds, strict=True):
-                    if np.isfinite(lo) and t <= lo:
-                        issues.append("at_lower_bound")
-                    if np.isfinite(hi) and t >= hi:
-                        issues.append("at_upper_bound")
-        except Exception:
-            issues.append("theta_error")
+        # bounds proximity (exactly at lo or hi) + near-bounds policy
+        theta = np.asarray(self._theta_get(), float)
+        bounds = get_bounds_log_for(type(self).__name__)
+        if len(bounds) != len(theta):
+            raise RuntimeError("Bounds dimensionality does not match theta")
+        frac_margin = float(POLICY.get("hard_bounds_margin_fraction", 0.02))
+        for t, (lo, hi) in zip(theta, bounds, strict=True):
+            if np.isfinite(lo) and t <= lo:
+                issues.append("at_lower_bound")
+            if np.isfinite(hi) and t >= hi:
+                issues.append("at_upper_bound")
+            if POLICY.get("fail_if_near_hard_bounds", True):
+                if np.isfinite(lo) and np.isfinite(hi) and hi > lo:
+                    width = hi - lo
+                    dist_lo = (t - lo) / width
+                    dist_hi = (hi - t) / width
+                    if dist_lo <= frac_margin:
+                        issues.append("near_lower_bound")
+                    if dist_hi <= frac_margin:
+                        issues.append("near_upper_bound")
+
+        # soft-box proximity via central constraints
+        soft_box = get_soft_box_for(type(self).__name__)
+        # Gather params by name from either self.params or attributes
+        params: Dict[str, float] = {}
+        param_src: Dict[str, float] = dict(getattr(self, "params"))  # type: ignore[arg-type]
+        for name in soft_box.keys():
+            if name in param_src:
+                params[name] = float(param_src[name])
+            elif hasattr(self, name):
+                params[name] = float(getattr(self, name))
+            else:
+                raise KeyError(f"Missing parameter '{name}' on model")
+        from .fit_constraints import soft_box_distance  # local import to avoid cycles
+
+        inside, min_margin = soft_box_distance(params, soft_box)
+        if POLICY.get("fail_if_outside_soft_box", True) and not inside:
+            issues.append("outside_soft_box")
+        if POLICY.get("fail_if_near_soft_edge", True) and inside:
+            edge_frac = float(POLICY.get("soft_edge_margin_fraction", 0.05))
+            if min_margin <= edge_frac:
+                issues.append("near_soft_edge")
         return {"ok": len(issues) == 0, "issues": issues}
 
     # --- generic negative log-likelihood ---------------------------------
@@ -189,14 +220,33 @@ class BaseLifetime:
     ) -> "BaseLifetime":
         _ = kwargs
         theta0 = self._theta_get() if x0 is None else np.asarray(x0, float)
-        if bounds is None and hasattr(self, "default_bounds"):
-            try:
-                bounds = self.default_bounds()  # type: ignore[attr-defined]
-            except Exception:
-                bounds = None
+        # Always use centralised bounds; if missing, raise KeyError
+        bounds = (
+            get_bounds_log_for(type(self).__name__)
+            if bounds is None
+            else bounds
+        )
+
+        # Compute an effective sample size for optional penalty scaling
+        def _sum_counts(w: Optional[np.ndarray]) -> float:
+            if w is None:
+                return 0.0
+            return float(np.sum(np.asarray(w, float)))
+
+        # Effective N is the SUM OF COUNTS only (ignore raw lengths)
+        n_eff = 0.0
+        n_eff += _sum_counts(data_counts)
+        n_eff += _sum_counts(survival_counts)
+        n_eff += _sum_counts(initial_counts)
+        n_eff += _sum_counts(empty_counts)
 
         def objective(theta: np.ndarray) -> float:
             self._theta_set(theta)
+            # Expose effective N to subclass penalty if needed
+            try:
+                setattr(self, "_fit_n_eff", float(n_eff))
+            except Exception:
+                pass
             nll = self.neg_log_likelihood(
                 data=data,
                 data_counts=data_counts,
@@ -232,6 +282,19 @@ class BaseLifetime:
             self._theta_set(res.x)
             raise RuntimeError("Fit failed: " + res.message)
         self._theta_set(res.x)
+        # Post-fit health gate (optional failure)
+        fail_on_unhealthy = bool(
+            kwargs.get(
+                "fail_on_unhealthy",
+                POLICY.get("fail_on_unhealthy_default", False),
+            )
+        )
+        if fail_on_unhealthy:
+            health = self.quick_health()
+            if not health.get("ok", False):
+                raise RuntimeError(
+                    "Unhealthy fit: " + ",".join(health.get("issues", []))
+                )
         return self
 
     # --- parametrisation hooks ------------------------------------------

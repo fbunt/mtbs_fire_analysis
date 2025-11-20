@@ -32,6 +32,14 @@ from typing import Dict, Optional, Sequence, Tuple
 
 import numpy as np
 from scipy import integrate, stats
+
+from .default_params import IG_DEFAULTS, WEIBULL_DEFAULTS
+from .fit_constraints import (
+    get_bounds_log_for,
+    get_penalty_strength_for,
+    get_soft_box_for,
+    penalty_scale_factor,
+)
 from scipy.special import gamma, gammaincc
 
 from .lifetime_base import BaseLifetime
@@ -106,7 +114,11 @@ class SciPyParametric(BaseLifetime):
 # We optimise in log‑space for stability: θ = (log k, log λ)
 # -----------------------------------------------------------------------------
 class Weibull(SciPyParametric):
-    def __init__(self, shape: float = 1.0, scale: float = 1.0) -> None:
+    def __init__(
+        self,
+        shape: float = WEIBULL_DEFAULTS["shape"],
+        scale: float = WEIBULL_DEFAULTS["scale"],
+    ) -> None:
         super().__init__()
         self._theta = np.array([np.log(shape), np.log(scale)], float)
         self._refresh()
@@ -170,12 +182,8 @@ class Weibull(SciPyParametric):
     # Reasonable, wide bounds in log-space to keep optimizer from k→0 or
     # extreme λ
     def default_bounds(self) -> Sequence[Tuple[float, float]]:
-        k_min, k_max = 1e-3, 1e3
-        lam_min, lam_max = 1e-3, 1e5
-        return [
-            (np.log(k_min), np.log(k_max)),
-            (np.log(lam_min), np.log(lam_max)),
-        ]
+        bounds = get_bounds_log_for(type(self).__name__)
+        return list(bounds)
 
     # Soft penalty to keep search in a practical region; smooth quadratic
     # outside box
@@ -189,24 +197,32 @@ class Weibull(SciPyParametric):
             or (lam <= 0.0)
         ):
             return 1e9
-        # Preferred box (domain-specific; adjust if needed)
-        k_lo, k_hi = 0.3, 10.0
-        lam_lo, lam_hi = 1.0, 200.0
-        strength = 1e3
+        sb = get_soft_box_for(type(self).__name__)
+        k_lo, k_hi = sb.get("shape", (0.3, 10.0))
+        lam_lo, lam_hi = sb.get("scale", (1.0, 200.0))
+        strength = get_penalty_strength_for(type(self).__name__) or 1e3
+        # Penalty in LOG space: use distances in s = ln(param) normalised by
+        # the soft-box log-width so multiplicative deviations are symmetric.
         pen = 0.0
-        if k < k_lo:
-            d = (k_lo - k) / k_lo
+        s_k, s_lam = np.log(k), np.log(lam)
+        s_k_lo, s_k_hi = np.log(k_lo), np.log(k_hi)
+        s_lam_lo, s_lam_hi = np.log(lam_lo), np.log(lam_hi)
+        w_k = max(s_k_hi - s_k_lo, 1e-12)
+        w_lam = max(s_lam_hi - s_lam_lo, 1e-12)
+        if s_k < s_k_lo:
+            d = (s_k_lo - s_k) / w_k
             pen += d * d
-        elif k > k_hi:
-            d = (k - k_hi) / k_hi
+        elif s_k > s_k_hi:
+            d = (s_k - s_k_hi) / w_k
             pen += d * d
-        if lam < lam_lo:
-            d = (lam_lo - lam) / lam_lo
+        if s_lam < s_lam_lo:
+            d = (s_lam_lo - s_lam) / w_lam
             pen += d * d
-        elif lam > lam_hi:
-            d = (lam - lam_hi) / lam_hi
+        elif s_lam > s_lam_hi:
+            d = (s_lam - s_lam_hi) / w_lam
             pen += d * d
-        return float(strength * pen)
+        n_eff = getattr(self, "_fit_n_eff", 0.0)
+        return float(strength * penalty_scale_factor(n_eff) * pen)
 
 
 # -----------------------------------------------------------------------------
@@ -216,7 +232,9 @@ class Weibull(SciPyParametric):
 # To match IG(mean=mu, shape=lam), set mu_s = mu/lam, scale = lam.
 # -----------------------------------------------------------------------------
 class InverseGauss(SciPyParametric):
-    def __init__(self, mu: float = 1.0, lam: float = 1.0) -> None:
+    def __init__(
+        self, mu: float = IG_DEFAULTS["mu"], lam: float = IG_DEFAULTS["lam"]
+    ) -> None:
         super().__init__()
         if mu <= 0 or lam <= 0:
             raise ValueError("mu and lam must be positive.")
@@ -281,12 +299,8 @@ class InverseGauss(SciPyParametric):
         return out if np.ndim(w) else float(out[0])
 
     def default_bounds(self) -> Sequence[Tuple[float, float]]:
-        mu_min, mu_max = 1e-3, 1e4
-        lam_min, lam_max = 1e-3, 1e5
-        return [
-            (np.log(mu_min), np.log(mu_max)),
-            (np.log(lam_min), np.log(lam_max)),
-        ]
+        bounds = get_bounds_log_for(type(self).__name__)
+        return list(bounds)
 
     def _soft_penalty(self) -> float:
         mu, lam = float(self.mu), float(self.lam)
@@ -297,23 +311,31 @@ class InverseGauss(SciPyParametric):
             or (lam <= 0.0)
         ):
             return 1e9
-        mu_lo, mu_hi = 1e-2, 1e3
-        lam_lo, lam_hi = 1e-2, 1e4
-        strength = 1e3
+        sb = get_soft_box_for(type(self).__name__)
+        mu_lo, mu_hi = sb.get("mu", (1e-2, 1e3))
+        lam_lo, lam_hi = sb.get("lam", (1e-2, 1e4))
+        strength = get_penalty_strength_for(type(self).__name__) or 1e3
+        # Log-space penalty symmetrical in multiplicative deviations
         pen = 0.0
-        if mu < mu_lo:
-            d = (mu_lo - mu) / mu_lo
+        s_mu, s_lam = np.log(mu), np.log(lam)
+        s_mu_lo, s_mu_hi = np.log(mu_lo), np.log(mu_hi)
+        s_lam_lo, s_lam_hi = np.log(lam_lo), np.log(lam_hi)
+        w_mu = max(s_mu_hi - s_mu_lo, 1e-12)
+        w_lam = max(s_lam_hi - s_lam_lo, 1e-12)
+        if s_mu < s_mu_lo:
+            d = (s_mu_lo - s_mu) / w_mu
             pen += d * d
-        elif mu > mu_hi:
-            d = (mu - mu_hi) / mu_hi
+        elif s_mu > s_mu_hi:
+            d = (s_mu - s_mu_hi) / w_mu
             pen += d * d
-        if lam < lam_lo:
-            d = (lam_lo - lam) / lam_lo
+        if s_lam < s_lam_lo:
+            d = (s_lam_lo - s_lam) / w_lam
             pen += d * d
-        elif lam > lam_hi:
-            d = (lam - lam_hi) / lam_hi
+        elif s_lam > s_lam_hi:
+            d = (s_lam - s_lam_hi) / w_lam
             pen += d * d
-        return float(strength * pen)
+        n_eff = getattr(self, "_fit_n_eff", 0.0)
+        return float(strength * penalty_scale_factor(n_eff) * pen)
 
 
 # Note: Global registry was moved to mtbs_fire_analysis.analysis.registry
