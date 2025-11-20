@@ -1,0 +1,52 @@
+Data pipeline overview
+
+- mtbs_fire_analysis/pipeline/m00_eco_regions_preprocess.py
+  - CLI: __main__ detected (arguments not parsed by heuristic)
+  - Imports: geopandas, mtbs_fire_analysis.defaults, mtbs_fire_analysis.pipeline.paths
+- mtbs_fire_analysis/pipeline/m00_mtbs_rasters_preprocess.py
+  - Functions: main
+  - CLI: __main__ detected (arguments not parsed by heuristic)
+  - Imports: dask.diagnostics, glob, mtbs_fire_analysis.defaults, mtbs_fire_analysis.pipeline.paths, pathlib, raster_tools
+- mtbs_fire_analysis/pipeline/m00_perims_preprocess.py
+  - Functions: clean_perims, split_perims_by_year, main
+  - CLI: __main__ detected (arguments not parsed by heuristic)
+  - Imports: datetime, geopandas, mtbs_fire_analysis.defaults, mtbs_fire_analysis.pipeline.paths, numpy
+- mtbs_fire_analysis/pipeline/m00_states_preprocess.py
+  - CLI: __main__ detected (arguments not parsed by heuristic)
+  - Imports: geopandas, pandas, paths, raster_tools
+- mtbs_fire_analysis/pipeline/m00_wui_preprocess.py
+  - Functions: _renamer, load_raw_wui_gdf, write_wui_gdf_to_gpkg, main
+  - CLI: __main__ detected (arguments not parsed by heuristic)
+  - Imports: dask, dask.diagnostics, dask_geopandas, numpy, pandas, paths, tqdm
+- mtbs_fire_analysis/pipeline/m01_nlcd_preprocess.py
+  - Functions: main
+  - CLI: __main__ detected (arguments not parsed by heuristic)
+  - Imports: dask.diagnostics, glob, mtbs_fire_analysis.defaults, mtbs_fire_analysis.pipeline.paths, pathlib, raster_tools, shutil
+- mtbs_fire_analysis/pipeline/m01_wui_preprocess.py
+  - Functions: get_part, build_save_part, build_wui_bool_parts_on_disk, _get_frame_from_parts, assemble_wui_bool_from_parts_and_save, main
+  - CLI: __main__ detected (arguments not parsed by heuristic)
+  - Imports: dask, dask.array, dask.dataframe, dask.distributed, dask_geopandas, glob, numpy, paths
+- mtbs_fire_analysis/pipeline/m10_data_extract.py
+  - Functions: _format_elapsed_time, get_conus_geom, get_mtbs_perims_raster_path, get_mtbs_perims_by_year_and_aoi, get_eco_regions_by_aoi, parallel_sjoin, _recover_orphans, _join_with_eco_regions, parallel_join, polars_join, _drop_duplicates, _add_raster, _get_initial_points, _get_nlcd_raster, _get_wui_raster, _build_dataframe_and_save, save_raster_to_points, main, _get_parser
+  - CLI args (heuristic): --min_year, --max_year
+  - Imports: argparse, dask.dataframe, dask.diagnostics, dask_geopandas, geopandas, mtbs_fire_analysis.defaults, mtbs_fire_analysis.geohasher, mtbs_fire_analysis.pipeline.paths, numpy, pandas ...
+- mtbs_fire_analysis/pipeline/m11_join_raster_data.py
+  - Functions: parallel_join, polars_join, _add_raster, _get_raster_fetcher, join_raster_to_frame, main, _path, _get_parser
+  - CLI args (heuristic): name, --frame-files / -f, --raster-files / -r
+  - Imports: argparse, dask.dataframe, dask.diagnostics, mtbs_fire_analysis.geohasher, mtbs_fire_analysis.pipeline.paths, numpy, pathlib, polars, raster_tools, time
+- mtbs_fire_analysis/pipeline/m20_combine.py
+  - Functions: _path, _get_parser, main
+  - CLI args (heuristic): --num_workers / -j, files, out_path
+  - Imports: argparse, dask, dask.dataframe, dask.distributed, pathlib
+- mtbs_fire_analysis/pipeline/m30_build_st.py
+  - Functions: _get_vrt_path, _get_dse_max_path, _protected_save_with_cleanup, build_st, stack_dse_years_as_vrt, calc_dse_max, st_chunk, calc_st_for_end_year, main, _get_parser
+  - CLI args (heuristic): end_years
+  - Imports: argparse, dask.diagnostics, mtbs_fire_analysis.pipeline.paths, numpy, pathlib, pprint, raster_tools, subprocess
+- mtbs_fire_analysis/pipeline/__init__.py
+- mtbs_fire_analysis/pipeline/paths.py
+  - Functions: get_points_path, get_mtbs_raster_path, get_nlcd_raster_path, get_wui_flavor_path, get_points_combined_path
+  - Imports: pathlib
+- mtbs_fire_analysis/pipeline/pixel_counts.py
+  - Functions: get_nlcd, clip_nlcd, compute_counts, main, _get_args
+  - CLI args (heuristic): nlcd_year, --eco-level / -e
+  - Imports: argparse, dask.diagnostics, geopandas, glob, mtbs_fire_analysis.pipeline.paths, numpy, pandas, raster_tools

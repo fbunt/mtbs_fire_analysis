@@ -1,0 +1,103 @@
+Analysis scripts overview
+
+- mtbs_fire_analysis/analysis/a00_get_histories.py
+  - Functions: _get_parser
+  - CLI args (heuristic): --max_date, --fixed_pivots, --varied_pivots
+  - Imports: argparse, datetime, mtbs_fire_analysis.analysis.defaults, mtbs_fire_analysis.analysis.mining, mtbs_fire_analysis.pipeline.paths, pathlib, polars
+- mtbs_fire_analysis/analysis/a10_create_config.py
+  - Imports: geopandas, mtbs_fire_analysis.pipeline.paths, polars, yaml
+- mtbs_fire_analysis/analysis/a20_hlh_fits.py
+  - Functions: do_fit, run_fit_over_configs, _get_parser
+  - CLI args (heuristic): --max_date, --min_date, --config_name
+  - Imports: argparse, datetime, mtbs_fire_analysis.analysis.defaults, mtbs_fire_analysis.analysis.distributions, mtbs_fire_analysis.analysis.hlh_dist, mtbs_fire_analysis.analysis.mining, mtbs_fire_analysis.pipeline.paths, numpy, pathlib, polars ...
+- mtbs_fire_analysis/analysis/a21_hlh_bootstraps.py
+  - Functions: do_fit, bootstrap_resample, run_fit_over_configs, _get_parser
+  - CLI args (heuristic): --max_date, --min_date, --config_name
+  - Imports: argparse, datetime, mtbs_fire_analysis.analysis.distributions, mtbs_fire_analysis.analysis.hlh_dist, mtbs_fire_analysis.analysis.mining, mtbs_fire_analysis.pipeline.paths, numpy, pathlib, polars, typing ...
+- mtbs_fire_analysis/analysis/a30_create_lookup.py
+  - Functions: hazard_to_burn_prob, create_lookup_table, _get_parser
+  - CLI args (heuristic): --max_date, --fits
+  - Imports: argparse, datetime, mtbs_fire_analysis.analysis.defaults, mtbs_fire_analysis.analysis.hlh_dist, mtbs_fire_analysis.analysis.utils, mtbs_fire_analysis.pipeline.paths, numpy, pathlib, polars
+- mtbs_fire_analysis/analysis/a31_full_statistics.py
+  - Imports: datetime, mtbs_fire_analysis.analysis.mining, pathlib, polars
+- mtbs_fire_analysis/analysis/a40_create_bp.py
+  - Functions: bp_chunk, main, _get_parser
+  - CLI args (heuristic): --eco_level, --year
+  - Imports: argparse, dask.array, dask.diagnostics, mtbs_fire_analysis.pipeline.paths, numpy, polars, raster_tools, rioxarray
+- mtbs_fire_analysis/analysis/a50_score_bp.py
+  - Functions: or_, and_, main, _path, _get_parser
+  - CLI args (heuristic): --year, --config_path, --bp_path, --out_path
+  - Imports: argparse, dask, dask.diagnostics, functools, mtbs_fire_analysis.pipeline.paths, numpy, pathlib, polars, raster_tools, yaml
+- mtbs_fire_analysis/analysis/All_data.py
+  - Imports: polars
+- mtbs_fire_analysis/analysis/DEPRECATEDhlh_test.py
+  - Imports: mtbs_fire_analysis.analysis.distributions, numpy, pathlib
+- mtbs_fire_analysis/analysis/TestFullHLHFit.py
+  - Functions: do_fit
+  - Imports: mtbs_fire_analysis.analysis.distributions, mtbs_fire_analysis.analysis.mining, numpy, pathlib, pickle, polars
+- mtbs_fire_analysis/analysis/TestLifeLines.py
+  - Imports: pathlib, yaml
+- mtbs_fire_analysis/analysis/__init__.py
+- mtbs_fire_analysis/analysis/statistical_tests/__init__.py
+- mtbs_fire_analysis/analysis/statistical_tests/all_sensors.py
+  - Imports: mtbs_fire_analysis.analysis.hlh_dist, mtbs_fire_analysis.analysis.statistical_tests.test_helpers, pandas
+- mtbs_fire_analysis/analysis/statistical_tests/all_sensors_repeat.py
+  - Functions: run_hlh_simulation
+  - CLI: __main__ detected (arguments not parsed by heuristic)
+  - Imports: mtbs_fire_analysis.analysis.hlh_dist, mtbs_fire_analysis.analysis.statistical_tests.test_helpers, numpy, pandas
+- mtbs_fire_analysis/analysis/calc_burn_probability.py
+  - Functions: bp_chunk, main, _get_parser
+  - CLI args (heuristic): eco_level, year
+  - Imports: argparse, dask.array, dask.diagnostics, mtbs_fire_analysis.pipeline.paths, numpy, polars, raster_tools, rioxarray
+- mtbs_fire_analysis/analysis/statistical_tests/cell_auto_test.py
+  - Functions: _step_ca, create_sample_data_ca, generate_correlated_field, plot_field, generate_mean_reverting_signal, plot_signal
+  - CLI: __main__ detected (arguments not parsed by heuristic)
+  - Imports: __future__, matplotlib.pyplot, numpy, scipy.ndimage, scipy.signal, typing
+- mtbs_fire_analysis/analysis/copy_file.py
+  - Imports: os, pathlib, shutil
+- mtbs_fire_analysis/analysis/statistical_tests/count_handling.py
+  - Imports: mtbs_fire_analysis.analysis.distributions, mtbs_fire_analysis.analysis.statistical_tests.test_helpers, numpy, pathlib
+- mtbs_fire_analysis/analysis/defaults.py
+  - Imports: datetime
+- mtbs_fire_analysis/analysis/statistical_tests/discard_right_sensoring.py: This script compares the true distribution that generated the
+  - Imports: mtbs_fire_analysis.analysis.distributions, mtbs_fire_analysis.analysis.statistical_tests.test_helpers, pathlib
+- mtbs_fire_analysis/analysis/distributions.py
+  - Classes: WeibullDistribution, HalfLifeHazardDistribution
+  - Functions: fit_dist, deficit, plot_fit_old, _weighted_ecdf, plot_fit
+  - Imports: matplotlib.pyplot, numpy, scipy.optimize, scipy.special, scipy.stats
+- mtbs_fire_analysis/analysis/dumb_example.py
+  - Imports: datetime, mtbs_fire_analysis.analysis.mining, polars
+- mtbs_fire_analysis/analysis/hlh_dist.py: Half‑Life Hazard Distribution with Analytic Gradient
+  - Classes: HalfLifeHazardDistribution
+  - Imports: numpy, scipy.integrate, scipy.optimize, scipy.special, typing
+- mtbs_fire_analysis/analysis/statistical_tests/left_sensoring.py: This script generates synthetic data to test the effect of left censoring on
+  - Imports: mtbs_fire_analysis.analysis.distributions, mtbs_fire_analysis.analysis.statistical_tests.test_helpers, pathlib
+- mtbs_fire_analysis/analysis/mining.py
+  - Functions: _extra_names, _extra_exprs, build_dts_df, build_survival_times, build_event_histories, event_hist_to_dts, event_hist_to_sts, event_hist_to_uts, event_hist_to_cts, event_hist_to_blank_pixels_events
+  - Imports: mtbs_fire_analysis.analysis.defaults, mtbs_fire_analysis.utils, polars
+- mtbs_fire_analysis/analysis/plot_dt.py
+  - Functions: basic_hist, sns_hist, sns_hist_stacked, sns_cdf, make_basic_bar_plots, _get_parser
+  - CLI args (heuristic): data_loc
+  - Imports: argparse, matplotlib.gridspec, matplotlib.pyplot, mtbs_fire_analysis.analysis.mining, numpy, polars, seaborn
+- mtbs_fire_analysis/analysis/read_output_pkl.py
+  - Imports: mtbs_fire_analysis.analysis.mining, numpy, pathlib, pickle, polars
+- mtbs_fire_analysis/analysis/score_burn_probability.py
+  - Functions: or_, and_, main, _path, _get_parser
+  - CLI args (heuristic): year, config_path, bp_path, out_path
+  - Imports: argparse, dask, dask.diagnostics, functools, mtbs_fire_analysis.pipeline.paths, numpy, pathlib, polars, raster_tools, yaml
+- mtbs_fire_analysis/analysis/summary_numbers.py
+  - Imports: mtbs_fire_analysis.analysis.utils, pathlib, polars, yaml
+- mtbs_fire_analysis/analysis/t25.py
+  - Functions: build_dts_df, ecdf, ecdf_norm_value, find_time_to_p, time_to_p_from, _get_parser
+  - CLI args (heuristic): data_loc
+  - Imports: argparse, numpy, polars
+- mtbs_fire_analysis/analysis/table_2.py
+  - Functions: _get_parser
+  - CLI args (heuristic): data_loc
+  - Imports: argparse, polars
+- mtbs_fire_analysis/analysis/statistical_tests/test_helpers.py
+  - Functions: create_sample_data, create_sample_data_all, evaluate_fits, evaluate_fits_all, output_plots
+  - Imports: mtbs_fire_analysis.analysis.distributions, numpy
+- mtbs_fire_analysis/analysis/utils.py
+  - Functions: get_lf, get_dts, get_sts, get_dt_polygons, get_st_polygons, get_events
+  - Imports: datetime, mtbs_fire_analysis.analysis.defaults, mtbs_fire_analysis.analysis.mining, mtbs_fire_analysis.pipeline.paths, pathlib, polars
