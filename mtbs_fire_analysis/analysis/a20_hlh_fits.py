@@ -8,19 +8,27 @@ import polars as pl
 import yaml
 
 import mtbs_fire_analysis.analysis.distributions as cd
-from mtbs_fire_analysis.analysis.defaults import FIXED_LABELS, VARIED_LABELS
 from mtbs_fire_analysis.analysis.hlh_dist import (
     HalfLifeHazardDistribution as HLHD,
 )
+from mtbs_fire_analysis.pipeline.paths import CACHE_DIR, RESULTS_DIR
 from mtbs_fire_analysis.analysis.mining import (
     event_hist_to_cts,
     event_hist_to_dts,
     event_hist_to_uts,
 )
 from mtbs_fire_analysis.pipeline.paths import CACHE_DIR
+from mtbs_fire_analysis.analysis.defaults import (
+    FIXED_LABELS,
+    VARIED_LABELS,
+    DEFAULT_FIXED_PIVOTS,
+    DEFAULT_VARIED_PIVOTS,
+    MTBS_START,
+    MTBS_END,
+)
 
 pix_counts = pl.read_parquet(
-    "mtbs_fire_analysis/data/eco_nlcd_mode_pixel_counts_eco3.pqt"
+    RESULTS_DIR / "eco_nlcd_mode_pixel_counts_eco3.pqt"
 ).rename(
     {
         "count": "Total num pixels",
@@ -28,25 +36,29 @@ pix_counts = pl.read_parquet(
 )
 
 
-out_dir = Path("mtbs_fire_analysis") / "outputs" / "HLH_Fits_Eco3"
-out_dir.mkdir(parents=False, exist_ok=True)
+# out_dir = Path("mtbs_fire_analysis") / "outputs" / "HLH_Fits_Eco3"
+# out_dir.mkdir(parents=False, exist_ok=True)
+
 
 
 def do_fit(
-    fitter, event_history, varied_filters, min_date, max_date, total_pixels
+    fitter,
+    event_history,
+    varied_filters,
+    min_date: dt|str,
+    max_date: dt|str,
+    empty_pixels: int = 0
 ):
-    # (fitter, dt_polygons, st_polygons, num_pixels, def_st):
+    if isinstance(min_date, str):
+        min_date = dt.strptime(min_date, "%Y-%m-%d")
+    if isinstance(max_date, str):
+        max_date = dt.strptime(max_date, "%Y-%m-%d")
+
     _dts_and_counts = event_hist_to_dts(event_history, varied_filters)
 
     _dts = _dts_and_counts["dt"].to_numpy()
     _dt_counts = _dts_and_counts["Pixel_Count"].to_numpy()
 
-    # _sts_and_counts = event_hist_to_sts(event_history,
-    #     min_date = None,
-    #     max_date = max_date,
-    #     fixed_pivots=fixed_pivots,
-    #     varied_pivots=varied_pivots
-    # )
     _cts_and_counts = event_hist_to_cts(
         event_history, max_date=max_date, varied_filters=varied_filters
     )
@@ -63,8 +75,6 @@ def do_fit(
 
     window_length = (max_date - min_date).days / 365.0
 
-    empty_pixels = total_pixels - event_history["Pixel_Count"].sum()
-
     fitter.fit(
         _dts,
         _dt_counts,
@@ -79,12 +89,15 @@ def do_fit(
     return fitter, _dts, _dt_counts, _cts, _ct_counts
 
 
-def run_fit_over_configs(event_histories, configs, min_date, max_date):
+def run_fit_over_configs(event_histories, configs, min_date, max_date, out_file, out_dir):
     outputs = []
 
+    plot_dir = out_dir / "plots"
+    plot_dir.mkdir(parents=False, exist_ok=True)
+
     for config in configs:
-        # if config["name"] != "Southern Coastal Plain : Schrub":
-        #      continue
+        if config["name"] != "Idaho Batholith : Grassland":
+            continue
         print(f"Fitting for config: {config['name']}")
         fixed_filters = {
             k: v
@@ -124,6 +137,27 @@ def run_fit_over_configs(event_histories, configs, min_date, max_date):
         )
         print(f"Total pixels: {total_pixels}")
 
+        mode_filters = [
+            pl.col(col+"_mode").is_in(vals)
+            for col, vals in varied_filters.items()
+        ]
+        combined_filter = mode_filters[0]
+        for f in mode_filters[1:]:
+            combined_filter = combined_filter & f
+        fire_pixels = config_histories.filter(combined_filter).select(
+            pl.col("Pixel_Count").sum()
+        ).item()
+        print(f"Fire pixels: {fire_pixels}")
+
+        empty_pixels = total_pixels - fire_pixels
+        if empty_pixels < 0:
+            print(
+                f"Total pixels {total_pixels} < sum of fire pixels {fire_pixels}"
+            )
+            empty_pixels = 0
+        print(f"Empty pixels: {empty_pixels}")
+
+
         try:
             fitter, sub_dts, sub_dt_counts, sub_sts, sub_st_counts = do_fit(
                 fitter=HLHD(hazard_inf=0.05, half_life=10),
@@ -131,7 +165,7 @@ def run_fit_over_configs(event_histories, configs, min_date, max_date):
                 varied_filters=varied_filters,
                 min_date=min_date,
                 max_date=max_date,
-                total_pixels=total_pixels,
+                empty_pixels=empty_pixels,
             )
         except RuntimeError as e:
             print(f"Failed to fit for config {config['name']}: {e}")
@@ -143,32 +177,32 @@ def run_fit_over_configs(event_histories, configs, min_date, max_date):
             sub_dt_counts,
             sub_sts,
             sub_st_counts,
-            out_dir / "plots" / (config["name"] + ".png"),
+            plot_dir / (config["name"] + ".png"),
             max_dt=60,
         )
 
         output = config.copy()
         output["dist"] = fitter.dist_type
         output["params"] = fitter.params
+        output["fire_return_interval"] = fitter.mean()
 
         outputs.append(output)
 
         # create data frame from outputs
     out_df = pl.DataFrame(outputs)
-    out_df.write_parquet(out_dir / "fits.parquet")
+    out_df.write_parquet(out_file)
 
 
 def _get_parser():
     p = argparse.ArgumentParser()
     p.add_argument(
         "--max_date",
-        help="Maximum date for event histories",
-        default="2023-01-01",
+        help="Maximum date for event histories eg. 2023-01-01",
     )
     p.add_argument(
         "--min_date",
-        help="Maximum date for event histories",
-        default="1984-01-01",
+        help="Minimum date for event histories eg. 1984-01-01",
+        default=dt.strftime(MTBS_START, "%Y-%m-%d"),
     )
     p.add_argument(
         "--config_name",
@@ -189,12 +223,17 @@ if __name__ == "__main__":
 
     # get event histories
     event_histories = pl.read_parquet(
-        CACHE_DIR / "event_histories_2023-01-01.parquet"
+        CACHE_DIR / f"event_histories{args.max_date}.parquet"
     )
+
+    out_dir = RESULTS_DIR / "HLH_Fits" / args.max_date
+    out_dir.mkdir(parents=False, exist_ok=True)
 
     run_fit_over_configs(
         event_histories,
         config_data[args.config_name],
-        dt.strptime(args.min_date, "%Y-%m-%d"),
-        dt.strptime(args.max_date, "%Y-%m-%d"),
+        args.min_date,
+        args.max_date,
+        out_dir / f"fits.parquet",
+        out_dir,
     )

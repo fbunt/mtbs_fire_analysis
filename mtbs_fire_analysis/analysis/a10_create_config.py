@@ -8,16 +8,16 @@ eco_lvl = 3
 
 # get event histories
 event_histories = pl.read_parquet(
-    CACHE_DIR / "event_histories_2023-01-01.parquet"
+    CACHE_DIR / "event_histories2023-01-01.parquet"
 )
 
 
 num_fire_pixels = (
-    event_histories.explode(["Ig_Date", "Event_ID", "nlcd"])
+    event_histories.explode(["Ig_Date", "perim_index", "nlcd"])
     .group_by(["eco_lvl_3", "nlcd"])
     .agg(
         pl.col("Pixel_Count").sum().alias("Fire Time Pixels"),
-        pl.col("Event_ID").n_unique().alias("Num Fires"),
+        pl.col("perim_index").n_unique().alias("Num Fires"),
     )
     .sort("eco_lvl_3", "nlcd")
 )
@@ -33,7 +33,7 @@ nlcd_map = pl.DataFrame(
 )
 
 pix_counts = pl.read_parquet(
-    "mtbs_fire_analysis/data/eco_nlcd_mode_pixel_counts_eco3.pqt"
+    "/fire_analysis_data/data/results/eco_nlcd_mode_pixel_counts_eco3.pqt"
 ).rename(
     {
         "count": "Total num pixels",
@@ -156,7 +156,12 @@ with open("mtbs_fire_analysis/data/eco_nlcd_candidates.yaml", "w") as f:
 
 # push summaries to csv
 summary.select(pl.exclude("nlcds")).write_csv(
-    "mtbs_fire_analysis/data/eco_nlcd_summary.csv",
+    "mtbs_fire_analysis/data/eco_nlcd_summary_mode.csv",
     include_header=True,
     separator=",",
 )
+
+# push summaries to parquet
+summary.write_parquet(
+    "mtbs_fire_analysis/data/eco_nlcd_summary.pqt")
+

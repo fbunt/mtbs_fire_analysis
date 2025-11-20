@@ -7,6 +7,7 @@ import numpy as np
 import polars as pl
 
 import mtbs_fire_analysis.analysis.utils as cache_utils
+from mtbs_fire_analysis.pipeline.paths import CACHE_DIR, RESULTS_DIR
 from mtbs_fire_analysis.analysis.defaults import (
     FIXED_LABELS,
     MTBS_END,
@@ -17,6 +18,11 @@ from mtbs_fire_analysis.analysis.hlh_dist import (
     HalfLifeHazardDistribution as HLHD,
 )
 
+def hazard_to_burn_prob(hazard: float) -> float:
+    """Convert hazard to burn probability."""
+    if hazard <= 0:
+        return 0.0
+    return 1 - np.exp(-hazard)
 
 def create_lookup_table(
     fits, max_date: dt | str = MTBS_END, refresh: bool = False
@@ -65,7 +71,7 @@ def create_lookup_table(
                     **{key: row[key] for key in common_keys},
                     **{
                         "st": unique_sts[i],
-                        "hazard": hazards[i],
+                        "burn_prob": hazard_to_burn_prob(hazards[i]),
                     },
                 }
                 for i in range(len(hazards))
@@ -75,14 +81,14 @@ def create_lookup_table(
                     **{key: row[key] for key in common_keys},
                     **{
                         "st": full_interval,
-                        "hazard": fitter.expected_hazard_ge(full_interval),
+                        "burn_prob": hazard_to_burn_prob(fitter.expected_hazard_ge(full_interval)),
                     },
                 }
             ]
         )
 
     look_up_table = pl.from_dicts(records).with_columns(
-        pl.col("st").cast(pl.Float32), pl.col("hazard").cast(pl.Float32)
+        pl.col("st").cast(pl.Float32), pl.col("burn_prob").cast(pl.Float32)
     )
 
     for key in common_keys:
@@ -96,26 +102,21 @@ def _get_parser():
     p.add_argument(
         "--max_date",
         help="Maximum date for event survival times",
-        default="2023-01-01",
+        default="2022-01-01",
     )
     p.add_argument(
         "--fits",
-        help="Parquet file with fitted distributions",
-        default="mtbs_fire_analysis/outputs/HLH_Fits_Eco3/outputs.parquet",
+        help="Directory containing fit data, in folders by year",
+        default=RESULTS_DIR / "HLH_Fits",
     )
-    p.add_argument(
-        "--out_file",
-        help="Where to write the lookup table",
-        default="mtbs_fire_analysis/outputs/HLH_Fits_Eco3/lookup_table.parquet",
-    )
-
     return p
 
 
 if __name__ == "__main__":
     args = _get_parser().parse_args()
 
-    fit_data_file = Path(args.fits)
+    year_file = Path(args.fits) / args.max_date
+    fit_data_file = year_file / "fits.parquet"
 
     fits = pl.read_parquet(fit_data_file)
 
@@ -123,7 +124,7 @@ if __name__ == "__main__":
         fits, max_date=args.max_date, refresh=False
     )
 
-    out_file = Path(args.out_file)
+    out_file = year_file / "hazard_lookup.parquet"
     out_file.parent.mkdir(parents=True, exist_ok=True)
 
     look_up_table.write_parquet(out_file)

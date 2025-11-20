@@ -6,7 +6,11 @@ import polars as pl
 
 from mtbs_fire_analysis.analysis.mining import build_event_histories
 from mtbs_fire_analysis.pipeline.paths import CACHE_DIR, RESULTS_DIR
-
+from mtbs_fire_analysis.analysis.defaults import (
+    DEFAULT_FIXED_PIVOTS,
+    DEFAULT_VARIED_PIVOTS,
+    EXTRA_FIXED_FIELDS
+)
 
 def _get_parser():
     p = argparse.ArgumentParser()
@@ -19,13 +23,13 @@ def _get_parser():
         "--fixed_pivots",
         help="Pivots that are fixed per location",
         nargs="+",
-        default=["eco_lvl_3"],
+        default=DEFAULT_FIXED_PIVOTS+EXTRA_FIXED_FIELDS,
     )
     p.add_argument(
         "--varied_pivots",
         help="Pivots that are varying over time per location",
         nargs="+",
-        default=["nlcd"],
+        default=DEFAULT_VARIED_PIVOTS,
     )
     return p
 
