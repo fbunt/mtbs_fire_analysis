@@ -28,7 +28,7 @@ if refresh:
     cache_path.mkdir(parents=True, exist_ok=True)
 
 if refresh:
-    sts = build_survival_times(lf, extra_cols=["nlcd", "Event_ID"]).collect()
+    sts = build_survival_times(lf, extra_cols=["nlcd", "perim_index"]).collect()
     sts.write_parquet(cache_path / "sts.parquet")
 else:
     sts = pl.scan_parquet(cache_path / "sts.parquet").collect()

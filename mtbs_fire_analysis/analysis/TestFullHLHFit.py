@@ -33,28 +33,28 @@ if refresh_dts or refresh_sts:
     cache_path.mkdir(parents=True, exist_ok=True)
 
 if refresh_dts:
-    ldts = build_dts_df(lf, extra_cols=["nlcd", "Event_ID"])
+    ldts = build_dts_df(lf, extra_cols=["nlcd", "perim_index"])
     dts = ldts.collect()
     dts.write_parquet(cache_path / "dts.parquet")
 else:
     dts = pl.scan_parquet(cache_path / "dts.parquet").collect()
 
 if refresh_sts:
-    sts = build_survival_times(lf, extra_cols=["nlcd", "Event_ID"]).collect()
+    sts = build_survival_times(lf, extra_cols=["nlcd", "perim_index"]).collect()
     sts.write_parquet(cache_path / "sts.parquet")
 else:
     sts = pl.scan_parquet(cache_path / "sts.parquet").collect()
 
 if refresh_polygons:
     dt_polygons = (
-        dts.group_by(["eco", "nlcd2", "Event_ID1", "Event_ID2", "dt"])
+        dts.group_by(["eco", "nlcd2", "perim_index1", "perim_index2", "dt"])
         .agg(pl.len().alias("Pixel Count"))
         .filter(pl.col("dt") > 0.5)
     )
 
     st_polygons = (
         sts.filter(pl.col("n") > 1)
-        .group_by(["eco", "nlcd", "Event_ID", "st"])
+        .group_by(["eco", "nlcd", "perim_index", "st"])
         .agg(pl.len().alias("Pixel Count"))
     )
     dt_polygons.write_parquet(cache_path / "dt_polygons.parquet")

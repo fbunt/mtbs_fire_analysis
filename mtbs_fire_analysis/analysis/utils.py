@@ -32,7 +32,7 @@ def get_dts(refresh=False):
     """Get the dts dataframe."""
 
     if refresh:
-        ldts = build_dts_df(get_lf(), extra_cols=["nlcd", "Event_ID"])
+        ldts = build_dts_df(get_lf(), extra_cols=["nlcd", "perim_index"])
         dts = ldts.collect()
         dts.write_parquet(CACHE_DIR / "dts.parquet")
     else:
@@ -46,7 +46,7 @@ def get_sts(max_date: dt | str = MTBS_END, refresh: bool = False):
         max_date = dt.fromisoformat(max_date)
     if refresh:
         sts = build_survival_times(
-            get_lf(), max_date, extra_cols=["nlcd", "Event_ID"]
+            get_lf(), max_date, extra_cols=["nlcd", "perim_index"]
         ).collect()
         sts.write_parquet(
             CACHE_DIR / f"sts_{max_date.strftime('%Y-%m-%d')}.parquet"
@@ -64,7 +64,7 @@ def get_dt_polygons(refresh=False):
     if refresh:
         dts = get_dts()
         dt_polygons = (
-            dts.group_by(["eco3", "nlcd2", "Event_ID1", "Event_ID2", "dt"])
+            dts.group_by(["eco3", "nlcd2", "perim_index1", "perim_index2", "dt"])
             .agg(pl.len().alias("Pixel Count"))
             .filter(pl.col("dt") > 0.5)
         )
@@ -81,7 +81,7 @@ def get_st_polygons(refresh=False):
 
     if refresh:
         sts = get_sts()
-        st_polygons = sts.group_by(["eco3", "nlcd", "Event_ID", "st"]).agg(
+        st_polygons = sts.group_by(["eco3", "nlcd", "perim_index", "st"]).agg(
             pl.len().alias("Pixel Count")
         )
         st_polygons.write_parquet(CACHE_DIR / "st_polygons.parquet")

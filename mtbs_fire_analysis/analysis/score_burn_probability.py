@@ -35,7 +35,7 @@ def main(year, config_path, bp_path, out_path):
     )
     bp_data = bp.data.astype("float64")
 
-    bpt_data = np.where(burn.data >= 1, np.log(bp_data), np.log(1 - bp_data))
+    bpt_data = np.where(burn.data >= 1, np.log(np.maximum(bp_data,1e-9)), np.log(np.maximum(1 - bp_data,1e-9)))
     valid = ~bp.mask & ~nlcd.mask & ~eco3.mask
     results = []
     counts = []
