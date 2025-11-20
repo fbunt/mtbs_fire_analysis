@@ -2,6 +2,10 @@ import polars as pl
 
 from mtbs_fire_analysis.utils import flatmap
 
+from mtbs_fire_analysis.analysis.defaults import (
+    MINIMUM_DT
+)
+
 
 def _extra_names(col):
     return f"{col}_1", f"{col}_2"
@@ -85,7 +89,8 @@ def build_survival_times(lf, max_date=None, extra_cols=None):
     assert "bs" not in extra_cols
     extra_cols = ["bs"] + extra_cols
     return (
-        lf.group_by("geohash")
+        lf.filter(pl.col("Ig_Date") <= max_date)
+        .group_by("geohash")
         .agg(
             pl.len().alias("n"),
             pl.col("eco_lvl_1").last(),
@@ -111,12 +116,12 @@ def build_event_histories(
         .group_by(["geohash"] + fixed_pivots)
         .agg(
             pl.col("Ig_Date").sort_by("Ig_Date"),
-            pl.col("Event_ID").sort_by("Ig_Date"),
+            pl.col("perim_index").sort_by("Ig_Date"),
             pl.col(*varied_pivots).sort_by("Ig_Date"),
             pl.len().alias("# Fires"),
         )
         .group_by(
-            ["Ig_Date", "# Fires", "Event_ID"] + fixed_pivots + varied_pivots
+            ["Ig_Date", "# Fires", "perim_index"] + fixed_pivots + varied_pivots
         )
         .agg(pl.len().alias("Pixel_Count"))
         .drop_nulls()
@@ -143,7 +148,7 @@ def event_hist_to_dts(event_hist, varied_filters=None):
                     for col, vals in (varied_filters or {}).items()
                 ]
             )
-        )
+        ).filter(pl.col("dt")>MINIMUM_DT)
         .drop_nulls()
         .select(pl.col("dt"), pl.col("Pixel_Count"), *varied_pivots)
     )
