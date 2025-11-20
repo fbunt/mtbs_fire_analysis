@@ -11,6 +11,8 @@ RUN apt-get update && \
         python3 python3-pip build-essential git \
         gdal-bin libgdal-dev proj-bin libproj-dev \
         ffmpeg \
+        rsync \
+        openssh-client \
         sudo && \
     rm -rf /var/lib/apt/lists/*
 

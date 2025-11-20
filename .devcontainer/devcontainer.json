@@ -35,10 +35,11 @@
       "extensions": [
         // VSCode extensions
         // Python and Jupyter extensions
-        "ms-python.python",      // Core Python support
+        "ms-python.python",      // Core Python supportd
         "ms-toolsai.jupyter",     // Interactive Window / Notebooks
         "charliermarsh.ruff",
-        "mechatroner.rainbow-csv" // CSV file support
+        "mechatroner.rainbow-csv", // CSV file support
+        "saoudrizwan.claude-dev" // Cline integration
       ]
     }
   }
