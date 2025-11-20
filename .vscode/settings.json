@@ -2,5 +2,14 @@
   "jupyter.notebookFileRoot": "/workspaces/mtbs_fire_analysis",
   "settings": {
         "python.defaultInterpreterPath": "/workspaces/mtbs_fire_analysis/.venv/bin/python",
-    }
+    },
+    "python.testing.unittestArgs": [
+      "-v",
+      "-s",
+      "./tests",
+      "-p",
+      "test*.py"
+    ],
+    "python.testing.pytestEnabled": false,
+    "python.testing.unittestEnabled": true
 }
