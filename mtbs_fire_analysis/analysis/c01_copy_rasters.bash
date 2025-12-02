@@ -1,6 +1,6 @@
 # ---- config for folder copying ----
 DEST_FOLDERS="rupertwilliams@10.8.202.72:~/QGIS/'Fire Interval Data'"  # where the folders will land
-SOURCE_BASE="/fire_analysis_data/data/"  # base directory containing folders
+SOURCE_BASE="/run/media/fire_analysis/data/"  # base directory containing folders
 
 # List of specific folders to copy (add/remove as needed)
 FOLDERS_TO_COPY=(

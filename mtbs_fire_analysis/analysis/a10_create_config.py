@@ -33,7 +33,7 @@ nlcd_map = pl.DataFrame(
 )
 
 pix_counts = pl.read_parquet(
-    "/fire_analysis_data/data/results/eco_nlcd_mode_pixel_counts_eco3.pqt"
+    "/run/media/fire_analysis/data/results/eco_nlcd_mode_pixel_counts_eco3.pqt"
 ).rename(
     {
         "count": "Total num pixels",

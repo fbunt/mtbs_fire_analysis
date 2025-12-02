@@ -20,11 +20,11 @@ refresh_polygons = True
 
 bootstrap = False
 # %%
-cache_path = Path("/fire_analysis_data") / "data" / "cache"
+cache_path = Path("/run/media/fire_analysis") / "data" / "cache"
 
 if refresh_dts or refresh_sts:
     data_path = (
-        Path("/fire_analysis_data")
+        Path("/run/media/fire_analysis")
         / "data"
         / "results"
         / "mtbs_CONUS_1984_2022"
