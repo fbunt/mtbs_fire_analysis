@@ -38,6 +38,12 @@ dependencies = [
   "nbconvert>=7.16.6",
 ]
 
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["mtbs_fire_analysis*"]
 
 [tool.black]
 line-length = 79
