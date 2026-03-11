@@ -2,9 +2,8 @@ import polars as pl
 
 from mtbs_fire_analysis.utils import flatmap
 
-from mtbs_fire_analysis.analysis.defaults import (
-    MINIMUM_DT
-)
+# Minimum time between fires in years
+MINIMUM_DT = 0.25
 
 
 def _extra_names(col):
@@ -148,7 +147,8 @@ def event_hist_to_dts(event_hist, varied_filters=None):
                     for col, vals in (varied_filters or {}).items()
                 ]
             )
-        ).filter(pl.col("dt")>MINIMUM_DT)
+        )
+        .filter(pl.col("dt") > MINIMUM_DT)
         .drop_nulls()
         .select(pl.col("dt"), pl.col("Pixel_Count"), *varied_pivots)
     )

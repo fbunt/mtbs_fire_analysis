@@ -48,7 +48,6 @@ def sns_hist_stacked(ax, df, bs, weighting=False):
     )
     if legend:
         sns.move_legend(ax, "upper left", bbox_to_anchor=(1.1, 2))
-    # ax.text(0.8, 0.8, f"Severity: {bs}", transform=ax.transAxes)
     ax.set_xlim([0, 39])
 
 
@@ -65,7 +64,6 @@ def sns_cdf(ax, df, bs):
     )
     if legend:
         sns.move_legend(ax, "upper left", bbox_to_anchor=(1.1, 2))
-    # ax.text(0.8, 0.8, f"Severity: {bs}", transform=ax.transAxes)
     ax.set_xlim([0, 39])
 
 
