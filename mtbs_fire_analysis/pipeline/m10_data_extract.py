@@ -225,7 +225,6 @@ def _build_dataframe_and_save(
     n = len(points)
     if drop_extra:
         extra_cols = [
-            "Incid_Name",
             "Asmnt_Type",
             "area_acres",
             "days_since_epoch",
@@ -259,7 +258,7 @@ def _build_dataframe_and_save(
     points["lat"] = lat
     lon = None
     lat = None
-    print("Adding lon/lat")
+    print("Adding x/y")
     x, y = hasher.geohash_to_xy(points.geohash.to_numpy())
     points["x"] = x
     points["y"] = y
@@ -271,9 +270,6 @@ def _build_dataframe_and_save(
         f" Loss/gain: {(len(points) - n):+,}"
     )
     n = len(points)
-    if drop_extra:
-        print("Dropping extra columns: Event_ID")
-        points = points.drop(columns="Event_ID")
 
     burned_indices = hasher.geohash_to_ij(
         points.geohash.drop_duplicates().to_numpy()
