@@ -104,7 +104,10 @@ def polars_join(points, other, how="inner"):
         how = "inner"
     points = pl.from_pandas(points)
     other_points = pl.from_pandas(other)
-    return points.join(other_points, on="geohash", how=how).to_pandas()
+    # Use pyarrow to avoid columns with nulls converting to floats
+    return points.join(other_points, on="geohash", how=how).to_pandas(
+        use_pyarrow_extension_array=True
+    )
 
 
 def _drop_duplicates(points):
