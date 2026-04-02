@@ -37,6 +37,11 @@ def get_conus_geom(crs):
     return geoms[geoms.STUSPS == "CONUS"].geometry
 
 
+def get_states(crs):
+    states = gpd.read_file(STATES_PATH).to_crs(crs)
+    return states[["STUSPS", "geometry"]].rename({"STUSPS": "state"}, axis=1)
+
+
 def get_mtbs_perims_raster_path(year):
     return PERIMS_RASTERS_PATH / f"dse_{year}.tif"
 
@@ -182,6 +187,7 @@ def _build_dataframe_and_save(
     out_path,
     year,
     perims,
+    states,
     eco_regions,
     hex_grid,
     drop_extra,
@@ -194,11 +200,18 @@ def _build_dataframe_and_save(
     # fire perimeter vectors
     points["year"] = np.array(year, dtype="uint16")
     points = parallel_sjoin(points, perims, 20)
-    points = points.rename({"index_right": "perim_index"}, axis=1)
-    assert "perim_index" in points.columns
+    points = points.drop(columns="index_right")
     assert "index_right" not in points.columns
     print(
         f"Size after join(perims): {len(points):,}."
+        f" Loss/gain: {(len(points) - n):+,}"
+    )
+    n = len(points)
+    points = parallel_sjoin(points, states, 20)
+    points = points.drop(columns="index_right")
+    assert "index_right" not in points.columns
+    print(
+        f"Size after join(states): {len(points):,}."
         f" Loss/gain: {(len(points) - n):+,}"
     )
     n = len(points)
@@ -329,6 +342,7 @@ def _build_dataframe_and_save(
 
 def save_raster_to_points(years, crs, drop_extra_cols):
     aoi_gs = get_conus_geom(crs)
+    states = get_states(crs)
     for year in years:
         perims_raster_path = get_mtbs_perims_raster_path(year)
         mtbs_path = get_mtbs_raster_path(year, "CONUS")
@@ -361,6 +375,7 @@ def save_raster_to_points(years, crs, drop_extra_cols):
                 pts_path,
                 year,
                 perims,
+                states,
                 eco_regions,
                 hex_grid,
                 drop_extra_cols,
