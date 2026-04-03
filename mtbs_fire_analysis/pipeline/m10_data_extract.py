@@ -16,6 +16,7 @@ from mtbs_fire_analysis.defaults import DEFAULT_CRS
 from mtbs_fire_analysis.geohasher import GridGeohasher
 from mtbs_fire_analysis.pipeline.paths import (
     ECO_REGIONS_PATH,
+    ELEVATION_PATH,
     HEX_GRID_PATH,
     NLCD_MODE_RASTER_PATH,
     PERIMS_PATH,
@@ -187,6 +188,7 @@ def _build_dataframe_and_save(
     wui_class_path,
     wui_bool_path,
     wui_prox_path,
+    elevation_path,
     out_path,
     year,
     perims,
@@ -332,6 +334,12 @@ def _build_dataframe_and_save(
         f" Loss/gain: {(len(points) - n):+,}"
     )
     n = len(points)
+    points = _add_raster(points, elevation_path, "elevation", burned_indices)
+    print(
+        f"Size after join(elevation): {len(points):,}"
+        f" Loss/gain: {(len(points) - n):+,}"
+    )
+    n = len(points)
 
     # Convert to dask dataframe for saving in parallel
     nparts = max(int(np.round(n / TARGET_POINTS_PER_PARTITION)), 1)
@@ -360,6 +368,7 @@ def save_raster_to_points(years, crs, drop_extra_cols):
         perims = get_mtbs_perims_by_year_and_aoi(year, aoi_gs.values[0], crs)
         eco_regions = get_eco_regions_by_aoi(aoi_gs.values[0], crs)
         hex_grid = gpd.read_file(HEX_GRID_PATH)
+        elevation_path = ELEVATION_PATH
         print(f"---\nPreprocessing: {year}")
         start = time.time()
         with ProgressBar():
@@ -371,6 +380,7 @@ def save_raster_to_points(years, crs, drop_extra_cols):
                 wui_class_path,
                 wui_bool_path,
                 wui_prox_path,
+                elevation_path,
                 pts_path,
                 year,
                 perims,
