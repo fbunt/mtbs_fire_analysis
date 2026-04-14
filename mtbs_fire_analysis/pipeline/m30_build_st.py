@@ -19,14 +19,16 @@ def _get_dse_max_path(end_year):
     return PERIMS_RASTERS_PATH / f"dse_max_{end_year}.tif"
 
 
-def build_st(end_year):
+def build_st(end_year, start_year=1984):
     raster = rts.Raster(_get_dse_max_path(end_year - 1))
     data = raster.data
     data = data.map_blocks(
         st_chunk,
         dtype="float32",
         meta=np.array((), dtype="float32"),
+        start_year=start_year,
         end_year=end_year,
+        nodata=raster.null_value,
     )
     st = rts.data_to_raster_like(data, like=raster, nv=None)
     path = f"st/st_{end_year}.tif"
@@ -68,9 +70,9 @@ def calc_dse_max(start_year, end_year):
     protected_raster_save_with_cleanup(dse_max, out_path)
 
 
-def st_chunk(x, start_year, end_year):
+def st_chunk(x, start_year, end_year, nodata):
     # x is the number of days since linux epoch
-    mask = x == -1
+    mask = x == nodata
     # Convert to date
     x = np.datetime64("1970-01-01") + x.astype("timedelta64[D]")
     # Days until Jan 1, {end_year}
@@ -90,6 +92,7 @@ def calc_st_for_end_year(end_year):
         meta=np.array((), dtype="float32"),
         start_year=1984,
         end_year=end_year,
+        nodata=dse_raster.null_value,
     )
     st = rts.data_to_raster_like(data, like=dse_raster, nv=None)
     out_path = ST_PATH / f"st_{end_year}.tif"
