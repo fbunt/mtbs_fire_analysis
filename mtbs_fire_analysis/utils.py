@@ -2,6 +2,7 @@ import contextlib
 import itertools
 import pprint
 import subprocess
+from pathlib import Path
 
 from dask.diagnostics import ProgressBar
 
@@ -40,6 +41,7 @@ def protected_raster_save_with_cleanup(
 
 
 def stack_rasters_as_vrt(src_paths, dst_path):
+    src_paths = [Path(p) if not isinstance(p, Path) else p for p in src_paths]
     for p in src_paths:
         assert p.exists(), f"{p} does not exist"
     paths = map(str, src_paths)

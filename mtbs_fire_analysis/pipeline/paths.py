@@ -1,6 +1,12 @@
+import os
 from pathlib import Path
 
-MAIN_FOLDER_ALIAS = Path("/run/media/fire_analysis")
+MAIN_FOLDER_ALIAS = Path(
+    os.environ.get(
+        "FIRE_DATA_ROOT",
+        "/run/data_raid5/shared_data/fire_analysis",
+    )
+)
 
 MTBS_ROOT = MAIN_FOLDER_ALIAS / "data"
 MTBS_RASTER_DIR = MTBS_ROOT / "mtbs_bs_rasters"
