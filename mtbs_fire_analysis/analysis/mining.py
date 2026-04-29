@@ -110,18 +110,43 @@ def build_event_histories(
         max_date = lf.select(pl.col("Ig_Date").max()).collect().item()
     fixed_pivots = fixed_pivots or []
     varied_pivots = varied_pivots or []
+
+    # Conditionally carry hexel_id through to the output. When the input
+    # frame has hexel_id (the canonical m10 output does, via the
+    # spatial-join with the hex_grid in m10_data_extract.py), each
+    # geohash row is one pixel living in exactly one hex — so hexel_id
+    # is constant per geohash and survives the first groupby via
+    # `.first()`. Adding it to the second groupby key partitions output
+    # rows by spatial bin: same fire history within different hexels
+    # becomes separate rows.
+    #
+    # This enables downstream spatial-block bootstrap on the empty half
+    # of bootstrap_pixels_by_fire_history (which currently collapses to
+    # zero variance on deduped MTBS storage). See the downstream
+    # PHASE_2_5_PLAN.md for the full motivation. Frames without
+    # hexel_id (e.g. older test fixtures) keep the legacy schema.
+    has_hexel = "hexel_id" in lf.collect_schema().names()
+
+    first_agg = [
+        pl.col("Ig_Date").sort_by("Ig_Date"),
+        pl.col("perim_index").sort_by("Ig_Date"),
+        pl.col(*varied_pivots).sort_by("Ig_Date"),
+        pl.len().alias("# Fires"),
+    ]
+    second_groupby_keys = (
+        ["Ig_Date", "# Fires", "perim_index"]
+        + fixed_pivots
+        + varied_pivots
+    )
+    if has_hexel:
+        first_agg.append(pl.col("hexel_id").first())
+        second_groupby_keys.append("hexel_id")
+
     return (
         lf.filter(pl.col("Ig_Date") <= max_date)
         .group_by(["geohash"] + fixed_pivots)
-        .agg(
-            pl.col("Ig_Date").sort_by("Ig_Date"),
-            pl.col("perim_index").sort_by("Ig_Date"),
-            pl.col(*varied_pivots).sort_by("Ig_Date"),
-            pl.len().alias("# Fires"),
-        )
-        .group_by(
-            ["Ig_Date", "# Fires", "perim_index"] + fixed_pivots + varied_pivots
-        )
+        .agg(*first_agg)
+        .group_by(second_groupby_keys)
         .agg(pl.len().alias("Pixel_Count"))
         .drop_nulls()
     )
