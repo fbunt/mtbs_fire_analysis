@@ -1,6 +1,24 @@
 import os
 from pathlib import Path
 
+# ---------------------------------------------------------------------------
+#  Path config
+# ---------------------------------------------------------------------------
+# Inputs (raw rasters, NLCD, eco regions, hex grid, DEM, etc.) are large and
+# read-only — shared across branches via ``FIRE_DATA_ROOT``.
+#
+# Outputs (results, tmp, cache) are per-workflow writable artefacts —
+# isolated per branch via ``FIRE_RESULTS_DIR`` / ``FIRE_TMP_DIR`` /
+# ``FIRE_CACHE_DIR``. Defaults preserve the historical "everything under
+# ``FIRE_DATA_ROOT``" layout so main's workflow keeps working unchanged.
+#
+# Branches working in parallel with main (e.g. ``feat/spatial-covariates``)
+# **must** override ``FIRE_RESULTS_DIR`` (and typically also ``FIRE_TMP_DIR``
+# + ``FIRE_CACHE_DIR``) before invoking any pipeline script that writes
+# parquets/rasters/scores. See ``docs/plans/COVARIATE_BRANCH_KICKOFF.md``
+# §"Workflow isolation from main" for the canonical branch-isolated paths
+# and the rationale (Phase 3 lookup-rebaseline incident, 2026-04-30).
+
 MAIN_FOLDER_ALIAS = Path(
     os.environ.get(
         "FIRE_DATA_ROOT",
@@ -12,9 +30,21 @@ MTBS_ROOT = MAIN_FOLDER_ALIAS / "data"
 MTBS_RASTER_DIR = MTBS_ROOT / "mtbs_bs_rasters"
 RAW_RASTER_DATA_DIR = MTBS_RASTER_DIR / "raw"
 CLEANED_RASTER_DATA_DIR = MTBS_RASTER_DIR / "cleaned"
-ROOT_TMP_DIR = MAIN_FOLDER_ALIAS / "data_tmp"
-RESULTS_DIR = MAIN_FOLDER_ALIAS / "data" / "results"
-CACHE_DIR = MAIN_FOLDER_ALIAS / "data" / "cache"
+
+# --- Writable output dirs (per-branch isolatable) --------------------------
+ROOT_TMP_DIR = Path(
+    os.environ.get("FIRE_TMP_DIR", str(MAIN_FOLDER_ALIAS / "data_tmp"))
+)
+RESULTS_DIR = Path(
+    os.environ.get(
+        "FIRE_RESULTS_DIR", str(MAIN_FOLDER_ALIAS / "data" / "results")
+    )
+)
+CACHE_DIR = Path(
+    os.environ.get(
+        "FIRE_CACHE_DIR", str(MAIN_FOLDER_ALIAS / "data" / "cache")
+    )
+)
 
 PERIMS_DIR = MTBS_ROOT / "mtbs_perims"
 RAW_PERIMS_PATH = PERIMS_DIR / "raw" / "mtbs_perims_DD.shp"
