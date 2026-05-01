@@ -1,3 +1,16 @@
+# DEPRECATED 2026-05-01: canonical implementation lives downstream at
+# `packages/fire-interval/fire_interval/etl/mining.py` (Phase 4a Q1=A
+# migration; Phase 5b downstream-thick boundary close). This upstream
+# copy is retained only for `mtbs_fire_analysis.analysis.plot_dt`'s use;
+# all downstream pipeline consumers (a00, a20, a21, a31, etc.) import
+# from `fire_interval.etl.mining` directly.
+#
+# This file will be removed when `feat/spatial-covariates` (both this
+# upstream branch and the downstream branch) merges to upstream main —
+# `plot_dt.py` should migrate to the downstream module at that point or
+# be retired. See downstream
+# `docs/plans/PHASE_4A_BOUNDARY_DECISION.md` §"Migration sequence"
+# step 4 for the long-term plan.
 import polars as pl
 
 from mtbs_fire_analysis.utils import flatmap

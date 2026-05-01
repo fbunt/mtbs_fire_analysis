@@ -1,3 +1,16 @@
+# DEPRECATED 2026-05-01: canonical implementation lives downstream at
+# `packages/fire-interval/fire_interval/etl/pixel_counts.py` (Phase 4a
+# Q1=A migration; Phase 5b downstream-thick boundary close). The
+# downstream copy is the canonical home for future regenerations of
+# `eco_nlcd_mode_pixel_counts_eco3.pqt`. This upstream copy is
+# retained as a runnable script for historical reproducibility; new
+# invocations should target the downstream module via
+# `python -m fire_interval.etl.pixel_counts`.
+#
+# This file will be removed when `feat/spatial-covariates` (both this
+# upstream branch and the downstream branch) merges to upstream main.
+# See downstream `docs/plans/PHASE_4A_BOUNDARY_DECISION.md`
+# §"Migration sequence" step 4 for the long-term plan.
 import argparse
 import glob
 
