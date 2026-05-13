@@ -33,6 +33,8 @@ from mtbs_fire_analysis.pipeline.paths import (
     EVER_BURNED_MASK_LATEST_JSON_PATH,
     EVER_BURNED_MASK_PATH,
     EVER_BURNED_STACK_VRT_PATH,
+    MTBS_PERIM_YEAR_END,
+    MTBS_PERIM_YEAR_START,
     PERIMS_RASTERS_PATH,
 )
 from mtbs_fire_analysis.utils import (
@@ -40,8 +42,9 @@ from mtbs_fire_analysis.utils import (
     stack_rasters_as_vrt,
 )
 
-YEAR_START = 1984
-YEAR_END = 2022  # inclusive
+# Re-exported under the local-LOC-friendly aliases the build code uses.
+YEAR_START = MTBS_PERIM_YEAR_START
+YEAR_END = MTBS_PERIM_YEAR_END  # inclusive
 
 
 def _sha256_file(path: Path, chunk_size: int = 1 << 20) -> str:
@@ -97,6 +100,12 @@ def _write_sidecar(dse_paths: list[Path], script_path: Path) -> None:
         "script_sha256": _sha256_file(script_path),
         "output_mask_path": str(EVER_BURNED_MASK_PATH),
         "stack_vrt_path": str(EVER_BURNED_STACK_VRT_PATH),
+        "stack_vrt_note": (
+            "Rebuilt unconditionally by every m02b run via "
+            "gdalbuildvrt; not a long-lived artefact and has no "
+            "independent provenance. Trust this sidecar's "
+            "dse_inputs[] for what the mask was built from."
+        ),
     }
     EVER_BURNED_MASK_LATEST_JSON_PATH.write_text(
         json.dumps(sidecar, indent=2) + "\n"

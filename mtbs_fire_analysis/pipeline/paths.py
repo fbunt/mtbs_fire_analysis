@@ -52,6 +52,11 @@ PERIMS_CLEANED_DIR = PERIMS_DIR / "cleaned"
 PERIMS_PATH = PERIMS_CLEANED_DIR / "mtbs_perims_trimmed.gpkg"
 PERIMS_BY_YEAR_PATH = PERIMS_CLEANED_DIR / "mtbs_perims_by_year.gpkg"
 PERIMS_RASTERS_PATH = PERIMS_DIR / "rasters"
+# MTBS perim raster year coverage (single source of truth for m02b
+# ever-burned mask + I9 perim-coverage invariant — see Stage 1 review C1).
+# Update both ends together when extending the window beyond 2022.
+MTBS_PERIM_YEAR_START = 1984
+MTBS_PERIM_YEAR_END = 2022  # inclusive
 # Derived-input artefacts under mtbs_perims/ (m01-class shared write per
 # SOLAR_COVARIATE_PLAN.md §2 "Deliberate exception: m01-class derived
 # inputs"). Stratification-redesign Stage 1 lands the ever-burned mask
