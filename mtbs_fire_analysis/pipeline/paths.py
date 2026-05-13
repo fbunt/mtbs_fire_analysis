@@ -52,6 +52,18 @@ PERIMS_CLEANED_DIR = PERIMS_DIR / "cleaned"
 PERIMS_PATH = PERIMS_CLEANED_DIR / "mtbs_perims_trimmed.gpkg"
 PERIMS_BY_YEAR_PATH = PERIMS_CLEANED_DIR / "mtbs_perims_by_year.gpkg"
 PERIMS_RASTERS_PATH = PERIMS_DIR / "rasters"
+# Derived-input artefacts under mtbs_perims/ (m01-class shared write per
+# SOLAR_COVARIATE_PLAN.md §2 "Deliberate exception: m01-class derived
+# inputs"). Stratification-redesign Stage 1 lands the ever-burned mask
+# here.
+PERIMS_DERIVED_DIR = PERIMS_DIR / "derived"
+EVER_BURNED_MASK_PATH = PERIMS_DERIVED_DIR / "ever_burned_mask.tif"
+EVER_BURNED_MASK_LATEST_JSON_PATH = (
+    PERIMS_DERIVED_DIR / "ever_burned_mask_LATEST.json"
+)
+EVER_BURNED_STACK_VRT_PATH = (
+    PERIMS_DERIVED_DIR / "dse_stack_1984_2022.vrt"
+)
 STATES_DIR = MTBS_ROOT / "state_borders"
 RAW_STATES_PATH = STATES_DIR / "raw" / "cb_2018_us_state_5m.shp"
 STATES_PATH = STATES_DIR / "cleaned" / "states.shp"
