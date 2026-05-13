@@ -83,6 +83,7 @@ ELEVATION_RAW_PATH = ELEVATION_DIR / "raw" / "us_orig_dem.tif"
 ELEVATION_CLEANED_DIR = ELEVATION_DIR / "cleaned"
 ELEVATION_PATH = ELEVATION_DIR / "edna_dem.tif"
 ELEVATION_90M_PATH = ELEVATION_DIR / "edna_dem_90m.tif"
+ELEVATION_270M_PATH = ELEVATION_DIR / "edna_dem_270m.tif"
 
 WUI_DIR = MTBS_ROOT / "wui"
 RAW_WUI = WUI_DIR / "raw" / "CONUS_WUI_block_1990_2020_change_v4.gdb"
