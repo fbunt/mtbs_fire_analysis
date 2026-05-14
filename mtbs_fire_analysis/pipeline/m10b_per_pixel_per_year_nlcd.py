@@ -227,6 +227,13 @@ def main() -> int:
         help="Smoke-test mode: restrict to a single eco_lvl_3 region "
         "(e.g., 6207 for cascades_shrub).",
     )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="If set, delete the existing output directory before "
+        "writing. Default: refuse to proceed if the output directory "
+        "exists (safer for re-runs; opt-in to destructive overwrite).",
+    )
     args = parser.parse_args()
 
     started_at = datetime.now(timezone.utc).isoformat()
@@ -235,6 +242,33 @@ def main() -> int:
     print(f"[m10b] FIRE_RESULTS_DIR = {results_dir}")
     if args.eco_only is not None:
         print(f"[m10b] SMOKE TEST: eco_lvl_3 = {args.eco_only}")
+
+    # Early output-existence check (before the ~3 hr compute path).
+    # Mirrors the design pattern: scripts that write to predictable
+    # output paths refuse to clobber unless --overwrite is set, so an
+    # accidental re-run doesn't silently destroy data and `rm -rf`
+    # ceremony moves into the script's argument surface.
+    if args.eco_only is not None:
+        target_out_dir = (
+            results_dir / f"per_pixel_per_year_nlcd_eco{args.eco_only}"
+        )
+    else:
+        target_out_dir = results_dir / "per_pixel_per_year_nlcd"
+    if target_out_dir.exists():
+        if args.overwrite:
+            import shutil
+
+            print(
+                f"[m10b] --overwrite: removing existing {target_out_dir}"
+            )
+            shutil.rmtree(target_out_dir)
+        else:
+            print(
+                f"[m10b] ERROR: output directory exists and --overwrite "
+                f"was not set:\n  {target_out_dir}\n"
+                f"Pass --overwrite to delete + rebuild. Aborting."
+            )
+            return 4
 
     rows, cols, mask_stats = _build_ever_burned_indices(eco_only=args.eco_only)
     n_pixels = mask_stats["n_pixels"]
