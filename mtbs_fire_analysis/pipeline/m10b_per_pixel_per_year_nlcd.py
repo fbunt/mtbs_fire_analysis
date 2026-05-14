@@ -78,6 +78,12 @@ from mtbs_fire_analysis.pipeline.paths import (  # noqa: E402
 YEAR_START = 1984
 YEAR_END = 2022  # inclusive
 N_YEARS = YEAR_END - YEAR_START + 1
+# NLCD nodata sentinel (uint8 250 per the Annual_NLCD_LndCov_*.tif
+# rasters). Pixels where every year is nodata are filtered post-loop
+# so downstream consumers see only NLCD-valid pixels (Stage 3a review
+# C1 fold-in; mirrors m10_data_extract._add_raster's per-year nodata
+# drop at the per-pixel granularity m10b emits).
+NLCD_NODATA = 250
 
 # Linear-extrapolation reference from the Stage 3-spike (cascades_shrub):
 # 8,704,820 pixels × 39 years took 167.1 s → ~4.93e-7 s per pixel per year.
@@ -301,6 +307,31 @@ def main() -> int:
         print(f"[m10b] receipt: {out_path}")
         return 3
 
+    # Stage 3a review C1 fold-in: drop pixels where every year's NLCD
+    # is nodata (250). These pixels are ever-burned per the MTBS
+    # perimeter raster but never NLCD-valid in [W_0, W_1] (1.13M
+    # pixels = 0.2% in the 2026-05-14 CONUS run — static-nodata
+    # footprint per the receipt's per-year n_nonnull constancy). The
+    # downstream `nlcd_mode_per_interval` kernel skips nodata in its
+    # bincount, so a pixel with even one valid year is informative;
+    # all-nodata pixels carry no signal and would only emit the
+    # NLCD_NODATA sentinel for every interval. Drop them upstream so
+    # the join in `build_event_histories` operates on a clean frame.
+    t_filter = time.time()
+    any_valid_mask = (nlcd_per_year != NLCD_NODATA).any(axis=1)
+    n_pixels_dropped_all_nodata = int((~any_valid_mask).sum())
+    if n_pixels_dropped_all_nodata > 0:
+        rows = rows[any_valid_mask]
+        cols = cols[any_valid_mask]
+        nlcd_per_year = nlcd_per_year[any_valid_mask]
+        n_pixels = int(any_valid_mask.sum())
+    nodata_filter_seconds = time.time() - t_filter
+    print(
+        f"[m10b] nodata filter: dropped {n_pixels_dropped_all_nodata:,} "
+        f"all-nodata pixels ({nodata_filter_seconds:.2f}s); "
+        f"remaining {n_pixels:,} pixels have >=1 NLCD-valid year"
+    )
+
     # Build polars frame with (geohash, nlcd_per_year List[UInt8]).
     print("[m10b] geohashing pixel indices...")
     t0 = time.time()
@@ -400,6 +431,16 @@ def main() -> int:
         "checkpoint_after_n_years": CHECKPOINT_AFTER_N_YEARS,
         "checkpoint_ratio_limit": CHECKPOINT_RATIO_LIMIT,
         "checkpoint_passed": checkpoint_passed or args.eco_only is not None,
+        "n_pixels_dropped_all_nodata": n_pixels_dropped_all_nodata,
+        "nodata_filter_seconds": round(nodata_filter_seconds, 3),
+        "invariant_all_pixels_have_one_valid_year": (
+            "Every pixel in the output has at least one year in "
+            f"[{YEAR_START}, {YEAR_END}] with NLCD != {NLCD_NODATA}. "
+            "Downstream consumers (mining.py:build_event_histories) can "
+            "join freely; the kernel's per-interval bincount skips "
+            f"NLCD={NLCD_NODATA} values and emits {NLCD_NODATA} as the "
+            "interval mode iff all years in that interval are nodata."
+        ),
         "geohash_seconds": round(geohash_seconds, 1),
         "df_build_seconds": round(df_build_seconds, 1),
         "write_seconds": round(write_seconds, 1),
