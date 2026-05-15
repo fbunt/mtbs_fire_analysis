@@ -41,9 +41,9 @@ import numpy as np
 import raster_tools as rts
 
 from mtbs_fire_analysis.pipeline.paths import (
-    EVER_BURNED_STACK_VRT_PATH,
     FIRST_BURN_YEAR_LATEST_JSON_PATH,
     FIRST_BURN_YEAR_PATH,
+    FIRST_BURN_YEAR_STACK_VRT_PATH,
     MTBS_PERIM_YEAR_END,
     MTBS_PERIM_YEAR_START,
     PERIMS_RASTERS_PATH,
@@ -95,9 +95,9 @@ def _build_first_burn_year(dse_paths: list[Path]) -> rts.Raster:
     any year land at INT16_MAX and are mapped to FIRST_BURN_NODATA in a
     final pass.
     """
-    EVER_BURNED_STACK_VRT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    stack_rasters_as_vrt(dse_paths, EVER_BURNED_STACK_VRT_PATH)
-    stack = rts.Raster(EVER_BURNED_STACK_VRT_PATH)
+    FIRST_BURN_YEAR_STACK_VRT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    stack_rasters_as_vrt(dse_paths, FIRST_BURN_YEAR_STACK_VRT_PATH)
+    stack = rts.Raster(FIRST_BURN_YEAR_STACK_VRT_PATH)
 
     # Per-band True iff pixel is null (i.e. NOT burned that year). Using
     # to_null_mask() lets the build stay null-sentinel-agnostic the same
@@ -151,7 +151,7 @@ def _write_sidecar(dse_paths: list[Path], script_path: Path) -> None:
         "script_path": str(script_path),
         "script_sha256": _sha256_file(script_path),
         "output_first_burn_year_path": str(FIRST_BURN_YEAR_PATH),
-        "stack_vrt_path": str(EVER_BURNED_STACK_VRT_PATH),
+        "stack_vrt_path": str(FIRST_BURN_YEAR_STACK_VRT_PATH),
         "stack_vrt_note": (
             "Rebuilt unconditionally by every m02b/m02c run via "
             "gdalbuildvrt; not a long-lived artefact and has no "

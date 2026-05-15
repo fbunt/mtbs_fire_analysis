@@ -79,6 +79,14 @@ FIRST_BURN_YEAR_PATH = PERIMS_DERIVED_DIR / "first_burn_year.tif"
 FIRST_BURN_YEAR_LATEST_JSON_PATH = (
     PERIMS_DERIVED_DIR / "first_burn_year_LATEST.json"
 )
+# Stage 2c review C3: separate VRT artefact from m02b's so concurrent
+# m02b + m02c invocations don't race on the same scratch path. Both
+# scripts rebuild their VRT unconditionally via gdalbuildvrt; without
+# separate paths a concurrent rebuild would corrupt one of the two
+# readers. Sequential operation is unaffected.
+FIRST_BURN_YEAR_STACK_VRT_PATH = (
+    PERIMS_DERIVED_DIR / "dse_stack_1984_2022_m02c.vrt"
+)
 STATES_DIR = MTBS_ROOT / "state_borders"
 RAW_STATES_PATH = STATES_DIR / "raw" / "cb_2018_us_state_5m.shp"
 STATES_PATH = STATES_DIR / "cleaned" / "states.shp"
