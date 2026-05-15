@@ -69,6 +69,16 @@ EVER_BURNED_MASK_LATEST_JSON_PATH = (
 EVER_BURNED_STACK_VRT_PATH = (
     PERIMS_DERIVED_DIR / "dse_stack_1984_2022.vrt"
 )
+# Stratification-redesign Stage 2c: single-artefact alternative to the
+# fixed-window ever-burned mask. Pixel value = first year (1984..2022)
+# the pixel burned per the dse_*.tif stack; nodata if never burned.
+# Mask(T) for max_date_year T derived on-the-fly via
+# `(first_burn_year != nodata) & (first_burn_year <= T)` — see
+# STRATIFICATION_REDESIGN.md §8 Stage 2c + D-2026-05-14.
+FIRST_BURN_YEAR_PATH = PERIMS_DERIVED_DIR / "first_burn_year.tif"
+FIRST_BURN_YEAR_LATEST_JSON_PATH = (
+    PERIMS_DERIVED_DIR / "first_burn_year_LATEST.json"
+)
 STATES_DIR = MTBS_ROOT / "state_borders"
 RAW_STATES_PATH = STATES_DIR / "raw" / "cb_2018_us_state_5m.shp"
 STATES_PATH = STATES_DIR / "cleaned" / "states.shp"
