@@ -98,7 +98,13 @@ ECO_REGIONS_PATH = ECO_REGIONS_DIR / "cleaned" / "eco_regions.gpkg"
 ECO_REGIONS_RASTER_PATH = ECO_REGIONS_DIR / "rasters"
 NLCD_DIR = MTBS_ROOT / "nlcd"
 RAW_NLCD = NLCD_DIR / "raw"
-NLCD_PATH = NLCD_DIR / "cleaned"
+# NLCD subdir + annual filename are env-configurable so a deployment can
+# point the analysis at a different NLCD product without editing this
+# shared file. Defaults reproduce the legacy "cleaned/" C1V0 layout
+# (back-compat — existing users are unaffected). This group's deployment
+# sets FIRE_NLCD_SUBDIR=cog + FIRE_NLCD_TIF_FMT="{year}.tif" to use the
+# canonical C1V1 driver product (the "C1b repoint").
+NLCD_PATH = NLCD_DIR / os.environ.get("FIRE_NLCD_SUBDIR", "cleaned")
 NLCD_STACK_VRT_PATH = NLCD_PATH / "nlcd_1984_2022.vrt"
 NLCD_MODE_RASTER_PATH = NLCD_PATH / "nlcd_mode_1984_2022.tif"
 ELEVATION_DIR = MTBS_ROOT / "edna"
@@ -118,7 +124,10 @@ ST_PATH = MTBS_ROOT / "st"
 
 # --- Formats ---
 MTBS_TIF_FMT = "mtbs_{aoi}_{year}.tif"
-NLCD_TIF_FMT = "Annual_NLCD_LndCov_{year}_CU_C1V0.tif"
+# Env-configurable (see NLCD_PATH above); default = legacy C1V0 naming.
+NLCD_TIF_FMT = os.environ.get(
+    "FIRE_NLCD_TIF_FMT", "Annual_NLCD_LndCov_{year}_CU_C1V0.tif"
+)
 TMP_PTS_FMT = "mtbs_{aoi}_{year}"
 COMBINED_OUT_FMT = "mtbs_{aoi}_{min_year}_{max_year}"
 PIXEL_COUNT_OUT_FMT = "eco_nlcd_mode_pixel_counts_eco{eco_level}.pqt"
