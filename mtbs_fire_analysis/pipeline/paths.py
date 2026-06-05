@@ -31,6 +31,20 @@ MTBS_RASTER_DIR = MTBS_ROOT / "mtbs_bs_rasters"
 RAW_RASTER_DATA_DIR = MTBS_RASTER_DIR / "raw"
 CLEANED_RASTER_DATA_DIR = MTBS_RASTER_DIR / "cleaned"
 
+# Severity-raster READ path is env-configurable so a deployment can point
+# the analysis (m10/m11 via get_mtbs_raster_path) at a different MTBS
+# severity product without editing this shared file. Default reproduces
+# the legacy ``mtbs_bs_rasters/cleaned`` layout (back-compat — Fred's
+# other upstream-mtbs users are unaffected). This group's deployment sets
+# FIRE_MTBS_BS_SUBDIR=mtbs/cog + FIRE_MTBS_TIF_FMT="{year}.tif" to read
+# the canonical fde driver product (the MTBS analog of the NLCD "C1b"
+# repoint; see DECISION_REGISTER D-2026-06-05-mtbs-severity-repoint).
+# The m00 preprocess + RAW_RASTER_DATA_DIR / CLEANED_RASTER_DATA_DIR
+# above stay on the legacy layout so the legacy producer keeps working.
+MTBS_SEVERITY_READ_DIR = MTBS_ROOT / os.environ.get(
+    "FIRE_MTBS_BS_SUBDIR", "mtbs_bs_rasters/cleaned"
+)
+
 # --- Writable output dirs (per-branch isolatable) --------------------------
 ROOT_TMP_DIR = Path(
     os.environ.get("FIRE_TMP_DIR", str(MAIN_FOLDER_ALIAS / "data_tmp"))
@@ -123,7 +137,9 @@ ST_PATH = MTBS_ROOT / "st"
 
 
 # --- Formats ---
-MTBS_TIF_FMT = "mtbs_{aoi}_{year}.tif"
+# Env-configurable (see MTBS_SEVERITY_READ_DIR above); default = legacy
+# per-aoi naming. Canonical fde COGs are `{year}.tif`.
+MTBS_TIF_FMT = os.environ.get("FIRE_MTBS_TIF_FMT", "mtbs_{aoi}_{year}.tif")
 # Env-configurable (see NLCD_PATH above); default = legacy C1V0 naming.
 NLCD_TIF_FMT = os.environ.get(
     "FIRE_NLCD_TIF_FMT", "Annual_NLCD_LndCov_{year}_CU_C1V0.tif"
@@ -139,7 +155,11 @@ def get_points_path(year, aoi_code):
 
 
 def get_mtbs_raster_path(year, aoi_code):
-    return CLEANED_RASTER_DATA_DIR / MTBS_TIF_FMT.format(
+    # Reads from the env-configurable severity path (default = legacy
+    # cleaned/; this group sets it to the canonical fde cog/). The
+    # `{aoi}` placeholder is simply ignored by the canonical `{year}.tif`
+    # format string.
+    return MTBS_SEVERITY_READ_DIR / MTBS_TIF_FMT.format(
         aoi=aoi_code, year=year
     )
 
