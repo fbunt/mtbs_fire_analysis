@@ -55,9 +55,7 @@ RESULTS_DIR = Path(
     )
 )
 CACHE_DIR = Path(
-    os.environ.get(
-        "FIRE_CACHE_DIR", str(MAIN_FOLDER_ALIAS / "data" / "cache")
-    )
+    os.environ.get("FIRE_CACHE_DIR", str(MAIN_FOLDER_ALIAS / "data" / "cache"))
 )
 
 PERIMS_DIR = MTBS_ROOT / "mtbs_perims"
@@ -65,7 +63,34 @@ RAW_PERIMS_PATH = PERIMS_DIR / "raw" / "mtbs_perims_DD.shp"
 PERIMS_CLEANED_DIR = PERIMS_DIR / "cleaned"
 PERIMS_PATH = PERIMS_CLEANED_DIR / "mtbs_perims_trimmed.gpkg"
 PERIMS_BY_YEAR_PATH = PERIMS_CLEANED_DIR / "mtbs_perims_by_year.gpkg"
-PERIMS_RASTERS_PATH = PERIMS_DIR / "rasters"
+
+# Coarse-resolution fire-history rebuilds (FIRE_PIXEL_M != 30 m) isolate their
+# derived input rasters -- the per-year dse stack (m01) + the ever-burned /
+# first-burn-year masks (m02b/m02c) -- under a resolution-stamped sibling dir,
+# so a 120 m rebuild can NEVER clobber the canonical 30 m production rasters
+# that main + every other consumer read. Default (FIRE_PIXEL_M unset => 30 m)
+# => empty suffix => byte-identical legacy paths (back-compat; Fred's other
+# upstream-mtbs users are unaffected). This applies
+# D-2026-06-04-input-layer-rebuild-isolation decision (a) -- "emit additive /
+# distinct names, never the canonical fixed path" -- to the fire-history layer
+# at coarse resolution. The env var is read directly (not via
+# defaults.pixel_m_from_env) to keep paths.py free of the rasterio/odc.geo
+# import weight defaults.py carries; grid_for_pixel_m does the authoritative
+# multiple-of-30 validation where the grid is actually computed.
+_fire_pixel_m_raw = os.environ.get("FIRE_PIXEL_M")
+if _fire_pixel_m_raw:
+    try:
+        _FIRE_PIXEL_M = int(_fire_pixel_m_raw)
+    except ValueError as _e:
+        raise ValueError(
+            f"FIRE_PIXEL_M must be an integer number of metres, "
+            f"got {_fire_pixel_m_raw!r}"
+        ) from _e
+else:
+    _FIRE_PIXEL_M = 30
+_RES_SUFFIX = "" if _FIRE_PIXEL_M == 30 else f"_{_FIRE_PIXEL_M}m"
+
+PERIMS_RASTERS_PATH = PERIMS_DIR / f"rasters{_RES_SUFFIX}"
 # MTBS perim raster year coverage (single source of truth for m02b
 # ever-burned mask + I9 perim-coverage invariant — see Stage 1 review C1).
 # Update both ends together when extending the window beyond 2022.
@@ -75,14 +100,12 @@ MTBS_PERIM_YEAR_END = 2022  # inclusive
 # SOLAR_COVARIATE_PLAN.md §2 "Deliberate exception: m01-class derived
 # inputs"). Stratification-redesign Stage 1 lands the ever-burned mask
 # here.
-PERIMS_DERIVED_DIR = PERIMS_DIR / "derived"
+PERIMS_DERIVED_DIR = PERIMS_DIR / f"derived{_RES_SUFFIX}"
 EVER_BURNED_MASK_PATH = PERIMS_DERIVED_DIR / "ever_burned_mask.tif"
 EVER_BURNED_MASK_LATEST_JSON_PATH = (
     PERIMS_DERIVED_DIR / "ever_burned_mask_LATEST.json"
 )
-EVER_BURNED_STACK_VRT_PATH = (
-    PERIMS_DERIVED_DIR / "dse_stack_1984_2022.vrt"
-)
+EVER_BURNED_STACK_VRT_PATH = PERIMS_DERIVED_DIR / "dse_stack_1984_2022.vrt"
 # Stratification-redesign Stage 2c: single-artefact alternative to the
 # fixed-window ever-burned mask. Pixel value = first year (1984..2022)
 # the pixel burned per the dse_*.tif stack; nodata if never burned.

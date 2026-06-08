@@ -1,4 +1,5 @@
 import os
+import warnings
 
 import rasterio as rio
 from affine import Affine
@@ -17,6 +18,54 @@ _BASE_GEOHASH_AFFINE = Affine(
     30.0, 0.0, -2406135.0, 0.0, -30.0, 3222585.0, 0.0, 0.0, 1.0
 )
 _BASE_GEOHASH_GRID_SHAPE = (100150, 157144)
+
+# --- Coarsening edge-drop guard --------------------------------------------
+# grid_for_pixel_m floor-divides the base shape, so the partial bottom/right
+# edge strip (cells that don't complete a full pixel_m x pixel_m block) is
+# dropped rather than padded. For the blessed set {30,120,480,1920} that strip
+# is <0.07% of CONUS (the all-nodata frame margin). This guard warns once per
+# resolution if a coarsening ever drops more than 1% of the base-grid area --
+# a signal that the coarse grid is clipping a non-trivial edge of real data and
+# the resolution needs a look before it is trusted. (Requested 2026-06-08.)
+_DROPPED_AREA_WARN_THRESHOLD = 0.01
+_dropped_area_warned: "set[int]" = set()
+
+
+def coarsening_dropped_area_fraction(pixel_m):
+    """Fraction of the base 30 m grid area dropped by ``grid_for_pixel_m``'s
+    floor-division at ``pixel_m``.
+
+    The dropped cells are the partial bottom/right edge that does not complete
+    a full ``pixel_m`` x ``pixel_m`` block. Returns ``0.0`` when ``pixel_m``
+    divides the base shape exactly on both axes (always at 30 m).
+    """
+    if pixel_m <= 0 or pixel_m % BASE_PIXEL_M != 0:
+        raise ValueError(
+            f"pixel_m must be a positive integer multiple of "
+            f"{BASE_PIXEL_M} m (got {pixel_m!r})"
+        )
+    factor = pixel_m // BASE_PIXEL_M
+    h, w = _BASE_GEOHASH_GRID_SHAPE
+    covered = (h // factor * factor) * (w // factor * factor)
+    return 1.0 - covered / (h * w)
+
+
+def _warn_if_dropped_area_exceeds(pixel_m):
+    """Warn once per ``pixel_m`` if coarsening drops more than
+    ``_DROPPED_AREA_WARN_THRESHOLD`` of the base-grid area."""
+    if pixel_m in _dropped_area_warned:
+        return
+    frac = coarsening_dropped_area_fraction(pixel_m)
+    if frac > _DROPPED_AREA_WARN_THRESHOLD:
+        _dropped_area_warned.add(pixel_m)
+        warnings.warn(
+            f"grid_for_pixel_m({pixel_m} m): floor-division drops "
+            f"{frac:.2%} of the base 30 m grid area "
+            f"(> {_DROPPED_AREA_WARN_THRESHOLD:.0%}) -- the coarse grid clips "
+            f"a non-trivial edge strip of CONUS. Verify that strip is nodata "
+            f"frame, not real data, before trusting this resolution.",
+            stacklevel=3,
+        )
 
 
 def grid_for_pixel_m(pixel_m):
@@ -38,6 +87,7 @@ def grid_for_pixel_m(pixel_m):
     a = _BASE_GEOHASH_AFFINE
     affine = Affine(a.a * factor, a.b, a.c, a.d, a.e * factor, a.f)
     h, w = _BASE_GEOHASH_GRID_SHAPE
+    _warn_if_dropped_area_exceeds(pixel_m)
     return affine, (h // factor, w // factor)
 
 
@@ -119,6 +169,7 @@ def geobox_for_pixel_m(pixel_m):
     """
     affine, shape = grid_for_pixel_m(pixel_m)
     return GeoBox(shape, affine, DEFAULT_CRS)
+
 
 # Allows for some compression gains
 DEFAULT_PROX_MAX_DIST = 70_000
