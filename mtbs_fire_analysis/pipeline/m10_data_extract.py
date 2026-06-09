@@ -10,10 +10,14 @@ import pandas as pd
 import polars as pl
 import pyarrow
 import raster_tools as rts
-import xarray as xr
 from dask.diagnostics import ProgressBar
 
-from mtbs_fire_analysis.defaults import DEFAULT_CRS
+from mtbs_fire_analysis.defaults import (
+    BASE_PIXEL_M,
+    DEFAULT_CRS,
+    PIXEL_M,
+    geobox_for_pixel_m,
+)
 from mtbs_fire_analysis.geohasher import GridGeohasher
 from mtbs_fire_analysis.pipeline.paths import (
     ECO_REGIONS_PATH,
@@ -28,6 +32,7 @@ from mtbs_fire_analysis.pipeline.paths import (
     get_points_path,
     get_wui_flavor_path,
 )
+from mtbs_fire_analysis.raster_read import sample_on_geobox
 
 
 def _format_elapsed_time(elapsed):
@@ -155,20 +160,46 @@ def _drop_duplicates(points):
     return points
 
 
-def _add_raster(points, raster_path, name, idxs, how=None):
+# Resolution-aware covariate read target. The covariate rasters are 30 m COGs;
+# at a coarse FIRE_PIXEL_M the read MUST reduce them onto this analysis geobox
+# (mode/average) BEFORE the positional geohash-ij index, else the 30 m raster
+# is indexed with coarse-grid positions (the 2026-06-09 bug: a 4x misalignment
+# that dropped 57% of burned pixels to off-CONUS nodata, mis-valuing the rest).
+# None at 30 m -> the legacy native read (byte-identical).
+_GEOBOX = None if PIXEL_M == BASE_PIXEL_M else geobox_for_pixel_m(PIXEL_M)
+# Burned pixels are land; a valid-covariate coverage well below NLCD's ~99.5%
+# CONUS-land coverage signals a grid/resolution mismatch, not real nodata. Loud
+# WARN here; the hard regression gate lives in fire_interval.
+_COVERAGE_WARN = 0.90
+
+
+def _add_raster(
+    points, raster_path, name, idxs, *, resample_method="mode", how=None
+):
     print(f"Adding {name}")
     start = time.time()
-    raster = rts.Raster(raster_path)
-    xdata = raster.xdata
-    # Select burned locations
-    xvalues = xdata.isel(
-        band=xr.DataArray(np.zeros(len(idxs[0]), dtype=int), dims="z"),
-        y=xr.DataArray(idxs[0], dims="z"),
-        x=xr.DataArray(idxs[1], dims="z"),
-    ).to_numpy()
-    if raster.null_value is not None:
+    # Resolution-correct read: at a coarse geobox the source is reduced onto it
+    # (mode for categorical, average for continuous) BEFORE the geohash-ij
+    # index, so positions are valid. At 30 m (_GEOBOX is None) this is
+    # byte-identical to the legacy isel read.
+    xvalues, coverage, nv = sample_on_geobox(
+        raster_path,
+        _GEOBOX,
+        idxs,
+        resample_method=resample_method,
+        require_nodata=(_GEOBOX is not None),
+    )
+    if _GEOBOX is not None:
+        print(f"  {name} coverage: {coverage:.4f}")
+        if coverage < _COVERAGE_WARN:
+            print(
+                f"  WARNING: {name} coverage {coverage:.4f} < "
+                f"{_COVERAGE_WARN} — likely a grid/resolution mismatch, not "
+                "real nodata (NLCD covers ~99.5% of CONUS land)."
+            )
+    if nv is not None:
         # Drop any null values we picked up
-        mask = ~rts.raster.get_mask_from_data(xvalues, raster.null_value)
+        mask = ~rts.raster.get_mask_from_data(xvalues, nv)
         idxs = idxs[0][mask], idxs[1][mask]
         xvalues = xvalues[mask]
         mask = None
@@ -234,7 +265,15 @@ def _build_dataframe_and_save(
     # fire perimeter vectors
     points["year"] = np.array(year, dtype="uint16")
     points = parallel_sjoin(points, perims, 20)
-    points = points.drop(columns="index_right")
+    # Derive `perim_index` from the perims-join index (the perimeter's row in
+    # the cleaned gpkg). a00 / build_event_histories REQUIRE this column, but
+    # the consolidated `mtbs_perims_trimmed.gpkg` dropped it and m10 used to
+    # just discard the sjoin `index_right`. Restore it (back-compat: keep an
+    # existing `perim_index` if a future gpkg supplies one). 2026-06-09.
+    if "perim_index" in points.columns:
+        points = points.drop(columns="index_right")
+    else:
+        points = points.rename(columns={"index_right": "perim_index"})
     assert "index_right" not in points.columns
     print(
         f"Size after join(perims): {len(points):,}."
@@ -371,7 +410,13 @@ def _build_dataframe_and_save(
             f" Loss/gain: {(len(points) - n):+,}"
         )
         n = len(points)
-    points = _add_raster(points, elevation_path, "elevation", burned_indices)
+    points = _add_raster(
+        points,
+        elevation_path,
+        "elevation",
+        burned_indices,
+        resample_method="average",
+    )
     print(
         f"Size after join(elevation): {len(points):,}"
         f" Loss/gain: {(len(points) - n):+,}"

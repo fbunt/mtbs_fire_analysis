@@ -159,11 +159,12 @@ def sample_on_geobox(
     ``geobox=None`` is the native (30 m) path: index the source directly —
     byte-identical to the legacy ``_add_raster`` read, so 30 m is unchanged.
 
-    Returns ``(values, coverage)``: ``values`` is one entry per index;
+    Returns ``(values, coverage, nodata)``: ``values`` is one entry per index;
     ``coverage`` is the fraction of sampled cells that are NOT the source
     nodata — the signal the caller checks to fail loud on a silent
     grid/resolution mismatch (the missing fire-data-engineering coverage
     Check; the alignment gate inside ``read_onto_geobox`` is the other half).
+    ``nodata`` is the source null value (so the caller can drop nulls).
     """
     import numpy as np
     import raster_tools as rts
@@ -191,7 +192,7 @@ def sample_on_geobox(
 
     nv = out.null_value
     coverage = 1.0 if (nv is None or n == 0) else float((vals != nv).mean())
-    return vals, coverage
+    return vals, coverage, nv
 
 
 def _assert_source_is_native_resolution(path: Path, geobox: GeoBox) -> None:
