@@ -1,4 +1,5 @@
 import argparse
+import os
 import time
 
 import dask.dataframe as dd
@@ -31,6 +32,34 @@ from mtbs_fire_analysis.pipeline.paths import (
 
 def _format_elapsed_time(elapsed):
     return f"{int(elapsed // 60)}min, {elapsed % 60:.2f}s"
+
+
+def skip_wui() -> bool:
+    """True iff the four WUI covariate joins should be skipped.
+
+    Back-compat env-hook (default OFF -> WUI joined exactly as before, so
+    behaviour is unchanged for every other consumer of this shared upstream
+    script). When ``MTBS_SKIP_WUI`` is truthy, m10 omits the four WUI columns
+    (``wui_flag``/``wui_class``/``wui_bool``/``wui_prox``). Nothing in the
+    fire-interval four-types / fits path reads those columns (verified: zero
+    ``wui`` references in a00/a20/observation_data/etl), so the downstream
+    output is unaffected. Set it to run m10 when the WUI rasters are not
+    staged on the analysis root -- e.g. the 120 m four-types gate run, which
+    needs only fire timing, not covariates (phd-research, 2026-06-09).
+
+    Read at call time (not import) so tests / runs can flip it per process.
+    """
+    return os.environ.get("MTBS_SKIP_WUI", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def wui_flavor_path_or_none(year, flavor):
+    """``get_wui_flavor_path(year, flavor)`` unless WUI is skipped (->None)."""
+    return None if skip_wui() else get_wui_flavor_path(year, flavor)
 
 
 def get_conus_geom(crs):
@@ -309,31 +338,39 @@ def _build_dataframe_and_save(
         f" Loss/gain: {(len(points) - n):+,}"
     )
     n = len(points)
-    points = _add_raster(points, wui_flag_path, "wui_flag", burned_indices)
-    print(
-        f"Size after join(wui_flag): {len(points):,}"
-        f" Loss/gain: {(len(points) - n):+,}"
-    )
-    n = len(points)
-    points = _add_raster(points, wui_class_path, "wui_class", burned_indices)
-    print(
-        f"Size after join(wui_class): {len(points):,}"
-        f" Loss/gain: {(len(points) - n):+,}"
-    )
-    n = len(points)
-    points = _add_raster(points, wui_bool_path, "wui_bool", burned_indices)
-    print(
-        f"Size after join(wui_bool): {len(points):,}"
-        f" Loss/gain: {(len(points) - n):+,}"
-    )
-    n = len(points)
-
-    points = _add_raster(points, wui_prox_path, "wui_prox", burned_indices)
-    print(
-        f"Size after join(wui_prox): {len(points):,}"
-        f" Loss/gain: {(len(points) - n):+,}"
-    )
-    n = len(points)
+    # WUI joins are skipped when the paths are None (MTBS_SKIP_WUI); a real
+    # path runs the join exactly as before. Nothing downstream of m10 reads
+    # the wui_* columns, so omitting them is safe (phd-research, 2026-06-09).
+    if wui_flag_path is not None:
+        points = _add_raster(points, wui_flag_path, "wui_flag", burned_indices)
+        print(
+            f"Size after join(wui_flag): {len(points):,}"
+            f" Loss/gain: {(len(points) - n):+,}"
+        )
+        n = len(points)
+    if wui_class_path is not None:
+        points = _add_raster(
+            points, wui_class_path, "wui_class", burned_indices
+        )
+        print(
+            f"Size after join(wui_class): {len(points):,}"
+            f" Loss/gain: {(len(points) - n):+,}"
+        )
+        n = len(points)
+    if wui_bool_path is not None:
+        points = _add_raster(points, wui_bool_path, "wui_bool", burned_indices)
+        print(
+            f"Size after join(wui_bool): {len(points):,}"
+            f" Loss/gain: {(len(points) - n):+,}"
+        )
+        n = len(points)
+    if wui_prox_path is not None:
+        points = _add_raster(points, wui_prox_path, "wui_prox", burned_indices)
+        print(
+            f"Size after join(wui_prox): {len(points):,}"
+            f" Loss/gain: {(len(points) - n):+,}"
+        )
+        n = len(points)
     points = _add_raster(points, elevation_path, "elevation", burned_indices)
     print(
         f"Size after join(elevation): {len(points):,}"
@@ -354,10 +391,10 @@ def save_raster_to_points(years, crs, drop_extra_cols):
         perims_raster_path = get_mtbs_perims_raster_path(year)
         mtbs_path = get_mtbs_raster_path(year, "CONUS")
         nlcd_path = get_nlcd_raster_path(year)
-        wui_flag_path = get_wui_flavor_path(year, "flag")
-        wui_class_path = get_wui_flavor_path(year, "class")
-        wui_bool_path = get_wui_flavor_path(year, "bool")
-        wui_prox_path = get_wui_flavor_path(year, "prox")
+        wui_flag_path = wui_flavor_path_or_none(year, "flag")
+        wui_class_path = wui_flavor_path_or_none(year, "class")
+        wui_bool_path = wui_flavor_path_or_none(year, "bool")
+        wui_prox_path = wui_flavor_path_or_none(year, "prox")
         if not perims_raster_path.exists():
             print(f"---\nNo raster file. Skipping: {year}")
             continue
