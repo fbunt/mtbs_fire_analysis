@@ -60,20 +60,21 @@ import pyarrow as pa
 import raster_tools as rts
 import rasterio
 import xarray as xr
+from affine import Affine
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO_ROOT / "tools" / "data_audits"))
 from data_pipeline_invariants import rasterize_eco_polygons  # noqa: E402
 
+from mtbs_fire_analysis.defaults import pixel_m_from_env  # noqa: E402
 from mtbs_fire_analysis.geohasher import GridGeohasher  # noqa: E402
 from mtbs_fire_analysis.pipeline.paths import (  # noqa: E402
     ECO_REGIONS_PATH,
     EVER_BURNED_MASK_PATH,
+    MAIN_FOLDER_ALIAS,
     NLCD_MODE_RASTER_PATH,
-    RESULTS_DIR,
     get_nlcd_raster_path,
 )
-
 
 YEAR_START = 1984
 YEAR_END = 2022  # inclusive
@@ -100,31 +101,65 @@ def _utc_ts() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
-def _resolve_results_dir() -> Path:
-    """Confirm FIRE_RESULTS_DIR resolves to a branch-isolated path.
+_PROD_OVERRIDE_VALUES = {"1", "true", "yes", "on"}
 
-    Aborts if RESULTS_DIR resolves to main's default (the 2026-05-01
-    incident this guard defends against). Mirrors the workflow-isolation
-    discipline from ``CLAUDE.md``.
+
+def _resolve_results_dir() -> Path:
+    """Confirm FIRE_RESULTS_DIR resolves to an isolated (non-production)
+    path.
+
+    Aborts if RESULTS_DIR resolves to main's production default (the
+    2026-05-01 incident this guard defends against, where a branch run
+    clobbered main's results). Mirrors the reject-if-production-default
+    model of ``fire_interval.analysis.output_guard`` — replicated locally
+    here because m10b is upstream-mtbs and must not import fire_interval
+    (the dependency only flows ``fire_interval -> mtbs_fire_analysis``).
+
+    Any non-production root passes: the original branch scratch
+    (``fire_analysis_branch_spatial_covariates``) AND the per-resolution
+    coarse scratch roots (``fire_analysis_120m_fix`` / ``_480m`` / ``_1920m``)
+    used by the cross-resolution fidelity probe (the 2026-06-10 relax that
+    superseded the literal-substring check; runbook
+    ``docs/plans/COARSE_COVFIT_SIDECAR_BUILD.md`` blocker O1). The relax only
+    *widens* the accept set, so every previously-passing invocation still
+    passes.
     """
     env_val = os.environ.get("FIRE_RESULTS_DIR", "")
     if not env_val:
         raise RuntimeError(
-            "FIRE_RESULTS_DIR not set. Run "
-            "'source tools/set_branch_env.sh' before m10b. m10b writes "
-            "a multi-GB parquet to RESULTS_DIR; running under main's "
-            "default would clobber main's results."
+            "FIRE_RESULTS_DIR not set. Export an isolated scratch root "
+            "(e.g. tools/set_branch_env.sh, or the per-resolution env block "
+            "in docs/plans/COARSE_COVFIT_SIDECAR_BUILD.md) before m10b. "
+            "m10b writes a multi-GB parquet to RESULTS_DIR; running under "
+            "main's default would clobber main's results."
         )
-    p = Path(env_val)
-    if "fire_analysis_branch_spatial_covariates" not in str(p):
+    r = Path(env_val).resolve()
+    prod_default = (Path(MAIN_FOLDER_ALIAS) / "data" / "results").resolve()
+    prod_override = (
+        os.environ.get("FIRE_ALLOW_PROD_WRITE", "").lower()
+        in _PROD_OVERRIDE_VALUES
+    )
+    # Ancestor-aware (2026-06-10 adversarial-review fix): reject not only the
+    # literal production results dir but any path *inside* it (a subdir like
+    # …/data/results/HLH_Fits) or *above* it (the parent …/data, or
+    # FIRE_DATA_ROOT itself) — m10b writes per_pixel_per_year_nlcd/ INTO this
+    # root, so all of those land in the production tree. An exact-equality
+    # check silently admitted subdir/parent writes (the old literal-substring
+    # whitelist had caught them). Legitimate coarse scratch roots are SIBLINGS
+    # (…/fire_analysis_120m_fix/data/results) — neither relative to nor an
+    # ancestor of production — so they still pass.
+    in_prod_tree = r.is_relative_to(prod_default) or prod_default.is_relative_to(r)
+    if in_prod_tree and not prod_override:
         raise RuntimeError(
-            f"FIRE_RESULTS_DIR ({p}) does not look branch-isolated for "
-            "feat/spatial-covariates. Expected a path containing "
-            "'fire_analysis_branch_spatial_covariates'. Aborting."
+            f"FIRE_RESULTS_DIR ({r}) is at/inside/above main's production "
+            f"results tree ({prod_default}). m10b writes a multi-GB parquet "
+            "there; refusing to clobber. Point FIRE_RESULTS_DIR at an "
+            "isolated scratch root, or set FIRE_ALLOW_PROD_WRITE=1 to "
+            "override (you almost never want this)."
         )
-    if not p.exists():
-        raise RuntimeError(f"FIRE_RESULTS_DIR does not exist: {p}")
-    return p
+    if not r.exists():
+        raise RuntimeError(f"FIRE_RESULTS_DIR does not exist: {r}")
+    return r
 
 
 def _build_ever_burned_indices(
@@ -138,6 +173,7 @@ def _build_ever_burned_indices(
     t0 = time.time()
     with rasterio.open(EVER_BURNED_MASK_PATH) as src:
         ever_burned = src.read(1)
+        mask_transform = src.transform
     ever_burned_read_seconds = time.time() - t0
 
     if eco_only is not None:
@@ -167,20 +203,57 @@ def _build_ever_burned_indices(
         "n_pixels": n_pixels,
         "eco_only": eco_only,
         "raster_shape": list(ever_burned.shape),
+        "raster_transform": list(mask_transform)[:6],
     }
     return rows, cols, stats
 
 
 def _sample_year(
-    year: int, rows: np.ndarray, cols: np.ndarray
+    year: int,
+    rows: np.ndarray,
+    cols: np.ndarray,
+    raster_shape: tuple[int, int],
+    raster_transform: "object",
 ) -> tuple[np.ndarray, float, int, int]:
-    """Sample one year's NLCD at (rows, cols). Mirrors m10's _add_raster."""
+    """Sample one year's NLCD at (rows, cols). Mirrors m10's _add_raster.
+
+    ``raster_shape`` / ``raster_transform`` are the (height, width) and the
+    affine of the ever-burned mask grid the (rows, cols) indices were derived
+    from. The per-year NLCD raster MUST be on that same grid, else the
+    positional ``isel`` either raises (indices out of bounds) or — worse —
+    silently samples the wrong pixels. A shape-only check is NOT sufficient:
+    a same-shape raster with a SHIFTED origin (different transform) keeps
+    indices in-bounds but mis-samples every cell. So this guards BOTH shape
+    and transform, matching the canonical alignment gate
+    (``raster_read._assert_geobox_alignment``, which checks shape AND
+    transform via ``almost_equals``) — this is the exact bug class that broke
+    the original m10 covariate read at coarse resolution (2026-06-10,
+    nightly-review follow-up). Both checks read only raster metadata (no
+    data) so they are free, and 30m behavior is byte-identical (the per-year
+    NLCD COG and the mask always share ``grid_for_pixel_m(N)``).
+    """
     nlcd_path = get_nlcd_raster_path(year)
     if not nlcd_path.exists():
         raise FileNotFoundError(f"NLCD raster missing for year {year}: {nlcd_path}")
 
     t0 = time.time()
     raster = rts.Raster(str(nlcd_path))
+    ny, nx = raster.shape[-2:]
+    if (int(ny), int(nx)) != tuple(raster_shape):
+        raise RuntimeError(
+            f"NLCD raster {nlcd_path} shape {(int(ny), int(nx))} != "
+            f"ever-burned mask grid {tuple(raster_shape)} (year {year}); a "
+            "positional index would mis-sample. Confirm the NLCD subdir "
+            "matches FIRE_PIXEL_M (e.g. FIRE_NLCD_SUBDIR=cog_120m at 120 m)."
+        )
+    nlcd_transform = raster.geobox.transform
+    if not nlcd_transform.almost_equals(raster_transform, precision=1e-6):
+        raise RuntimeError(
+            f"NLCD raster {nlcd_path} transform {tuple(nlcd_transform)[:6]} "
+            f"!= ever-burned mask transform {tuple(raster_transform)[:6]} "
+            f"(year {year}); same shape but shifted origin → a positional "
+            "index would mis-sample every cell (the m10 grid-bug class)."
+        )
     n = int(rows.size)
     values = (
         raster.xdata.isel(
@@ -286,8 +359,12 @@ def main() -> int:
     checkpoint_passed = False
     abort_reason: str | None = None
 
+    mask_shape = tuple(mask_stats["raster_shape"])
+    mask_transform = Affine(*mask_stats["raster_transform"])
     for year_idx, year in enumerate(range(YEAR_START, YEAR_END + 1)):
-        values, wall, n_values, n_nonnull = _sample_year(year, rows, cols)
+        values, wall, n_values, n_nonnull = _sample_year(
+            year, rows, cols, mask_shape, mask_transform
+        )
         nlcd_per_year[:, year_idx] = values
         cumulative_wall += wall
         per_year_timings.append(
@@ -303,9 +380,17 @@ def main() -> int:
             f"n_nonnull {n_nonnull:,})"
         )
 
+        # The checkpoint gate guards a multi-HOUR CONUS-30m run against
+        # chunk-thrash nonlinearity (docstring + SPIKE comment). At coarse
+        # resolution the whole run is minutes (16x/256x/4096x fewer pixels)
+        # so the protection is moot — and the per-raster open overhead would
+        # dominate the tiny per-pixel extrapolation and FALSE-abort (acutely
+        # at 1920m). Gate only at the native 30m grid (2026-06-10, runbook
+        # blocker O2); coarse runs are exempted like eco-only smoke runs.
         if (
             year_idx + 1 == CHECKPOINT_AFTER_N_YEARS
             and args.eco_only is None
+            and pixel_m_from_env() == 30
             and not checkpoint_passed
         ):
             over_limit, note = _checkpoint_gate(
@@ -464,7 +549,11 @@ def main() -> int:
         ),
         "checkpoint_after_n_years": CHECKPOINT_AFTER_N_YEARS,
         "checkpoint_ratio_limit": CHECKPOINT_RATIO_LIMIT,
-        "checkpoint_passed": checkpoint_passed or args.eco_only is not None,
+        "checkpoint_passed": (
+            checkpoint_passed
+            or args.eco_only is not None
+            or pixel_m_from_env() != 30
+        ),
         "n_pixels_dropped_all_nodata": n_pixels_dropped_all_nodata,
         "nodata_filter_seconds": round(nodata_filter_seconds, 3),
         "invariant_all_pixels_have_one_valid_year": (

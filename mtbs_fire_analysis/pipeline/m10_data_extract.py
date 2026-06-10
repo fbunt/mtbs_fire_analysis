@@ -167,9 +167,13 @@ def _drop_duplicates(points):
 # that dropped 57% of burned pixels to off-CONUS nodata, mis-valuing the rest).
 # None at 30 m -> the legacy native read (byte-identical).
 _GEOBOX = None if PIXEL_M == BASE_PIXEL_M else geobox_for_pixel_m(PIXEL_M)
-# Burned pixels are land; a valid-covariate coverage well below NLCD's ~99.5%
-# CONUS-land coverage signals a grid/resolution mismatch, not real nodata. Loud
-# WARN here; the hard regression gate lives in fire_interval.
+# `coverage` here is the fraction of the BURNED-pixel geohashes (this eco's
+# query set) that sample a non-nodata covariate cell — NOT a CONUS-land
+# fraction. It's a near-1.0 proxy for land coverage only because burned pixels
+# are land and NLCD covers ~99.5% of CONUS land, so a real grid/resolution
+# mismatch (the m10 2026-06-09 bug) collapses it far below 0.90 while genuine
+# edge-nodata stays just under 1.0. Loud WARN here; the hard regression gate
+# lives in fire_interval. (Denominator clarified per 2026-06-10 review.)
 _COVERAGE_WARN = 0.90
 
 
@@ -194,8 +198,10 @@ def _add_raster(
         if coverage < _COVERAGE_WARN:
             print(
                 f"  WARNING: {name} coverage {coverage:.4f} < "
-                f"{_COVERAGE_WARN} — likely a grid/resolution mismatch, not "
-                "real nodata (NLCD covers ~99.5% of CONUS land)."
+                f"{_COVERAGE_WARN} — fraction of burned-pixel queries hitting "
+                "valid covariate; this low signals a grid/resolution "
+                "mismatch, not real edge-nodata (burned pixels are land; "
+                "NLCD covers ~99.5% of CONUS land)."
             )
     if nv is not None:
         # Drop any null values we picked up
