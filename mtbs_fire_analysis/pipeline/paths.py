@@ -147,7 +147,16 @@ NLCD_MODE_RASTER_PATH = NLCD_PATH / "nlcd_mode_1984_2022.tif"
 ELEVATION_DIR = MTBS_ROOT / "edna"
 ELEVATION_RAW_PATH = ELEVATION_DIR / "raw" / "us_orig_dem.tif"
 ELEVATION_CLEANED_DIR = ELEVATION_DIR / "cleaned"
-ELEVATION_PATH = ELEVATION_DIR / "edna_dem.tif"
+# Elevation filename is env-configurable so a deployment can point the
+# analysis (m10 via ELEVATION_PATH) at a precomputed analysis-resolution
+# DEM (e.g. FIRE_ELEVATION_TIF=edna_dem_120m.tif, built by
+# fire_interval.etl.build_coarse_covariates) without editing this shared
+# file. Default reproduces the legacy edna_dem.tif (back-compat — Fred's
+# other upstream-mtbs users are unaffected). Same pattern as
+# FIRE_NLCD_SUBDIR / FIRE_MTBS_BS_SUBDIR above.
+ELEVATION_PATH = ELEVATION_DIR / os.environ.get(
+    "FIRE_ELEVATION_TIF", "edna_dem.tif"
+)
 ELEVATION_90M_PATH = ELEVATION_DIR / "edna_dem_90m.tif"
 ELEVATION_270M_PATH = ELEVATION_DIR / "edna_dem_270m.tif"
 
