@@ -33,5 +33,9 @@ rasterize() {
 }
 
 
+# GNU parallel runs each job in a fresh shell, so the functions must be
+# exported or every job fails with "rasterize: command not found".
+export -f exe rasterize
+
 parallel -j 4 --tag --verbose --linebuffer --keep-order \
     rasterize {} ::: $(seq 1984 2022)
