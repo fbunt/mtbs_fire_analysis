@@ -67,6 +67,85 @@ def wui_flavor_path_or_none(year, flavor):
     return None if skip_wui() else get_wui_flavor_path(year, flavor)
 
 
+def membership_from_raster() -> bool:
+    """True iff the fired leg derives eco/hex membership from rasters.
+
+    Back-compat env gate (default OFF -> the vector ``sjoin`` path below runs
+    exactly as before, so the output is byte-identical for every other
+    consumer). When ``FIRE_MEMBERSHIP_FROM_RASTER`` is truthy, m10:
+
+    * reads eco / hex id from the single-assignment membership rasters
+      (``ECO_ID_RASTER_PATH`` / ``HEX_ID_RASTER_PATH``) instead of the vector
+      ``sjoin(eco)`` (+ orphan recovery) / ``sjoin(hex)`` -- one id per pixel
+      by construction, no cross-eco double-count;
+    * drops the ``sjoin(states)`` (and its ``state`` column -- zero downstream
+      consumers, verified), gating burned pixels on the ``conus_land`` domain
+      instead (the membership rasters are nodata=-1 outside ``conus_land``, so
+      the eco read's inner-drop IS the conus_land gate);
+    * flips the covariate joins (per-year ``nlcd``, ``wui_*``, ``elevation``)
+      from inner-drop to left-keep, so an ``M_base`` pixel is never dropped by
+      covariate nodata (a left-kept null covariate survives
+      ``build_event_histories`` -- ``nlcd`` as a List ``[null]`` is non-null at
+      the row drop_nulls; ``elevation``/``wui`` are non-pivots dropped at the
+      first group_by). The cov-fit path applies its own ``M_run`` covariate
+      filter (a00 drops null elevation before altitude binning).
+      ``nlcd_mode`` STAYS inner -- it is the stratification key / part of
+      ``M_base`` (a null-``nlcd_mode`` pixel is genuinely out of domain).
+
+    The "one source of truth" fix both legs read
+    (``docs/plans/M_BASE_BUILD.md``, ``D-2026-06-10-two-mask-domain-model``
+    option 3); mirrors the empties leg's ``FIRE_MEMBERSHIP_FROM_RASTER`` gate
+    (``etl_zero_fire_counts``). Read at call time (not import) so tests / runs
+    can flip it per process.
+    """
+    return os.environ.get(
+        "FIRE_MEMBERSHIP_FROM_RASTER", ""
+    ).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _require_membership_path(env_var: str, layer: str) -> str:
+    """Resolve a membership-raster path env var; fail loud if unset."""
+    path = os.environ.get(env_var)
+    if not path:
+        raise ValueError(
+            f"FIRE_MEMBERSHIP_FROM_RASTER is set but {env_var} is not - the "
+            f"single-assignment {layer} membership raster path is required "
+            "(docs/plans/M_BASE_BUILD.md)."
+        )
+    return path
+
+
+def _assert_membership_resolution(path: str, pixel_m: int) -> None:
+    """Fail loud if a membership raster's native pixel size != ``pixel_m``.
+
+    The ``*_ID_RASTER_PATH`` env vars carry no resolution tag, so pointing a
+    ``FIRE_PIXEL_M=120`` run at the 30 m raster would silently mode-reduce it
+    (``read_onto_geobox`` flat-from-base) to a value that does NOT equal the
+    baked 120 m single-assignment grid, while the geobox alignment gate still
+    passes -- a silent value divergence. Guard at the read; same spirit as
+    ``raster_read._assert_source_is_native_resolution``.
+    """
+    import rasterio
+
+    with rasterio.open(path) as ds:
+        res = abs(ds.transform.a)
+    if abs(res - pixel_m) > 1e-6 * pixel_m:
+        raise ValueError(
+            f"membership raster {path} native pixel size {res} m != analysis "
+            f"FIRE_PIXEL_M {pixel_m} m. Point ECO_ID_RASTER_PATH / "
+            f"HEX_ID_RASTER_PATH at the resolution-matched raster "
+            f"(e.g. eco_lvl_3_{pixel_m}m.tif / hexel_id_{pixel_m}m.tif)."
+        )
+
+
+# L3 eco code is ``XXYZZ`` (m00 encoding); L2 = ``//100`` (``XXY``), L1 =
+# ``//1000`` (``XX``). The membership raster carries only L3; derive L1/L2 by
+# the same floor-div the empties leg uses (``_ECO_LEVEL_DIV``) and that
+# ``m00_eco_regions_preprocess`` produces -- exact, not approximate.
+_ECO_L2_DIV = 100
+_ECO_L1_DIV = 1000
+
+
 def get_conus_geom(crs):
     geoms = gpd.read_file(STATES_PATH).to_crs(crs)
     return geoms[geoms.STUSPS == "CONUS"].geometry
@@ -263,6 +342,25 @@ def _build_dataframe_and_save(
     hex_grid,
     drop_extra,
 ):
+    # Single-source domain membership (option 3, M_BASE_BUILD.md). Computed
+    # once so OFF -> the vector-sjoin path runs verbatim (byte-identical).
+    membership = membership_from_raster()
+    eco_id_path = (
+        _require_membership_path("ECO_ID_RASTER_PATH", "eco")
+        if membership
+        else None
+    )
+    hex_id_path = (
+        _require_membership_path("HEX_ID_RASTER_PATH", "hex")
+        if membership
+        else None
+    )
+    if membership:
+        # Guard the resolution-tagless env paths against a res mismatch.
+        _assert_membership_resolution(eco_id_path, PIXEL_M)
+        _assert_membership_resolution(hex_id_path, PIXEL_M)
+    cov_how = "left" if membership else None
+
     points = _get_initial_points(perims_raster_path)
     print(f"Size initial: {len(points):,}. Loss/gain: {(len(points) - 0):+,}")
     n = len(points)
@@ -286,22 +384,29 @@ def _build_dataframe_and_save(
         f" Loss/gain: {(len(points) - n):+,}"
     )
     n = len(points)
-    points = parallel_sjoin(points, states, 20)
-    points = points.drop(columns="index_right")
-    assert "index_right" not in points.columns
-    print(
-        f"Size after join(states): {len(points):,}."
-        f" Loss/gain: {(len(points) - n):+,}"
-    )
-    n = len(points)
+    # States sjoin (OFF only): adds the `state` column AND doubles as a CONUS
+    # spatial filter. Under membership the conus_land gate (the eco read's
+    # inner-drop below) replaces the filter and `state` is dropped (0
+    # consumers).
+    if not membership:
+        points = parallel_sjoin(points, states, 20)
+        points = points.drop(columns="index_right")
+        assert "index_right" not in points.columns
+        print(
+            f"Size after join(states): {len(points):,}."
+            f" Loss/gain: {(len(points) - n):+,}"
+        )
+        n = len(points)
 
-    # Join with eco regions vectors
-    points = _join_with_eco_regions(points, eco_regions)
-    print(
-        f"Size after join(eco_regions): {len(points):,}."
-        f" Loss/gain: {(len(points) - n):+,}"
-    )
-    n = len(points)
+    # Join with eco regions vectors (OFF only -> ON reads the membership
+    # raster post-geohash, where the burned-pixel indices exist).
+    if not membership:
+        points = _join_with_eco_regions(points, eco_regions)
+        print(
+            f"Size after join(eco_regions): {len(points):,}."
+            f" Loss/gain: {(len(points) - n):+,}"
+        )
+        n = len(points)
     if drop_extra:
         extra_cols = [
             "Asmnt_Type",
@@ -316,13 +421,15 @@ def _build_dataframe_and_save(
         ]
         print(f"Dropping extra columns: {extra_cols}")
         points = points.drop(columns=extra_cols)
-    points = parallel_sjoin(points, hex_grid, 20)
-    points = points.drop(columns="index_right")
-    print(
-        f"Size after join(hex_grid): {len(points):,}."
-        f" Loss/gain: {(len(points) - n):+,}"
-    )
-    n = len(points)
+    # Hex sjoin (OFF only -> ON reads the hexel_id membership raster below).
+    if not membership:
+        points = parallel_sjoin(points, hex_grid, 20)
+        points = points.drop(columns="index_right")
+        print(
+            f"Size after join(hex_grid): {len(points):,}."
+            f" Loss/gain: {(len(points) - n):+,}"
+        )
+        n = len(points)
 
     # Geohash the grid points so we can drop geometry data entirely
     geometry = points["geometry"]
@@ -354,6 +461,42 @@ def _build_dataframe_and_save(
         points.geohash.drop_duplicates().to_numpy()
     )
 
+    if membership:
+        # Single-source eco/hex membership (option 3). The membership rasters
+        # are single-assignment (one id per pixel, centre-containment) and
+        # backfilled within conus_land (nodata=-1 elsewhere), so the eco
+        # read's inner-drop of -1 IS the conus_land gate -- replacing both the
+        # dropped states sjoin and the vector eco sjoin+orphan-recovery. hex
+        # carries the identical conus_land mask (same backfill), so it drops no
+        # additional pixels. eco_lvl_1/2 derive from L3 by the m00 XXYZZ
+        # floor-div (exact; matches the empties leg's _ECO_LEVEL_DIV).
+        points = _add_raster(
+            points,
+            eco_id_path,
+            "eco_lvl_3",
+            burned_indices,
+            resample_method="mode",
+        )
+        points["eco_lvl_2"] = points["eco_lvl_3"] // _ECO_L2_DIV
+        points["eco_lvl_1"] = points["eco_lvl_3"] // _ECO_L1_DIV
+        print(
+            f"Size after membership(eco_lvl_3, conus_land gate): "
+            f"{len(points):,} Loss/gain: {(len(points) - n):+,}"
+        )
+        n = len(points)
+        points = _add_raster(
+            points,
+            hex_id_path,
+            "hexel_id",
+            burned_indices,
+            resample_method="mode",
+        )
+        print(
+            f"Size after membership(hexel_id): {len(points):,}"
+            f" Loss/gain: {(len(points) - n):+,}"
+        )
+        n = len(points)
+
     points = _add_raster(points, mtbs_path, "bs", burned_indices, how="left")
     points = points.astype({"bs": pd.ArrowDtype(pyarrow.int8())})
     print(
@@ -369,12 +512,24 @@ def _build_dataframe_and_save(
     # )
     # n = len(points)
 
-    points = _add_raster(points, nlcd_path, "nlcd", burned_indices)
+    # Per-year nlcd flips to left-keep too (cov_how). Although nlcd is a
+    # varied_pivot (DEFAULT_VARIED_PIVOTS), build_event_histories aggregates it
+    # to a List BEFORE the terminal drop_nulls, and a List [null] is itself
+    # NON-null -- so a left-kept null-nlcd M_base pixel SURVIVES into the fired
+    # count under its valid (eco_lvl_3, nlcd_mode) stratum (verified empiric-
+    # ally against build_event_histories, not reasoned). Inner-drop would drop
+    # it at m10 and re-open the per-year-nlcd part of the gap. nlcd_mode alone
+    # STAYS inner (it is the stratification key / part of M_base).
+    points = _add_raster(
+        points, nlcd_path, "nlcd", burned_indices, how=cov_how
+    )
     print(
         f"Size after join(nlcd): {len(points):,}"
         f" Loss/gain: {(len(points) - n):+,}"
     )
     n = len(points)
+    # nlcd_mode STAYS inner (how=None): it is the stratification key / part of
+    # M_base, so a nlcd_mode-nodata burned pixel is out of domain on both legs.
     points = _add_raster(
         points, NLCD_MODE_RASTER_PATH, "nlcd_mode", burned_indices
     )
@@ -387,7 +542,9 @@ def _build_dataframe_and_save(
     # path runs the join exactly as before. Nothing downstream of m10 reads
     # the wui_* columns, so omitting them is safe (phd-research, 2026-06-09).
     if wui_flag_path is not None:
-        points = _add_raster(points, wui_flag_path, "wui_flag", burned_indices)
+        points = _add_raster(
+            points, wui_flag_path, "wui_flag", burned_indices, how=cov_how
+        )
         print(
             f"Size after join(wui_flag): {len(points):,}"
             f" Loss/gain: {(len(points) - n):+,}"
@@ -395,7 +552,7 @@ def _build_dataframe_and_save(
         n = len(points)
     if wui_class_path is not None:
         points = _add_raster(
-            points, wui_class_path, "wui_class", burned_indices
+            points, wui_class_path, "wui_class", burned_indices, how=cov_how
         )
         print(
             f"Size after join(wui_class): {len(points):,}"
@@ -403,14 +560,18 @@ def _build_dataframe_and_save(
         )
         n = len(points)
     if wui_bool_path is not None:
-        points = _add_raster(points, wui_bool_path, "wui_bool", burned_indices)
+        points = _add_raster(
+            points, wui_bool_path, "wui_bool", burned_indices, how=cov_how
+        )
         print(
             f"Size after join(wui_bool): {len(points):,}"
             f" Loss/gain: {(len(points) - n):+,}"
         )
         n = len(points)
     if wui_prox_path is not None:
-        points = _add_raster(points, wui_prox_path, "wui_prox", burned_indices)
+        points = _add_raster(
+            points, wui_prox_path, "wui_prox", burned_indices, how=cov_how
+        )
         print(
             f"Size after join(wui_prox): {len(points):,}"
             f" Loss/gain: {(len(points) - n):+,}"
@@ -422,6 +583,7 @@ def _build_dataframe_and_save(
         "elevation",
         burned_indices,
         resample_method="average",
+        how=cov_how,
     )
     print(
         f"Size after join(elevation): {len(points):,}"
