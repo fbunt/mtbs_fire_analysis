@@ -165,7 +165,12 @@ RAW_WUI = WUI_DIR / "raw" / "CONUS_WUI_block_1990_2020_change_v4.gdb"
 INTERMEDIATE_WUI = WUI_DIR / "intermediate" / "wui.gpkg"
 WUI_PATH = WUI_DIR / "cleaned"
 
-ST_PATH = MTBS_ROOT / "st"
+# Survival-time rasters are a derived fire-history product (m30 builds them
+# from the dse stack), so a coarse rebuild (FIRE_PIXEL_M != 30 m) must isolate
+# its output from the 30 m production rasters that a40/a45 read — same
+# _RES_SUFFIX treatment as PERIMS_RASTERS_PATH/PERIMS_DERIVED_DIR. Default
+# (30 m) resolves to the unchanged "st" dir.
+ST_PATH = MTBS_ROOT / f"st{_RES_SUFFIX}"
 
 
 # --- Formats ---
