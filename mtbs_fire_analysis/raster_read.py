@@ -23,10 +23,25 @@ Two entry points:
   pixels to off-CONUS nodata and mis-valued the rest). It returns a coverage
   fraction so callers can fail loud on a silent grid/resolution mismatch.
 
+``read_onto_geobox`` also has an **opt-in PATH-B fast read** (default OFF,
+byte-identical PATH-A when unset): when the source COG carries *flat-from-base*
+integer-f overviews (the ``flat-overview-serving`` injector's
+``FLAT_FROM_BASE_<MODE|AVERAGE>_FACTORS`` provenance tag) at the requested
+decimation factor, it serves the matching overview level directly instead of
+re-reducing the 30 m base — exact, not approximate, because the injected
+overview *is* the integer-f flat block PATH-A would compute. Gated on the
+flat-provenance tag (NOT bare ``OVERVIEW_RESAMPLING``: a stock-average /
+cascade-mode COG rides GDAL's ceil-ratio grid and would silently serve drifted
+values). Controlled per-call by ``prefer_overview`` or globally by
+``FIRE_PATHB_OVERVIEWS``; any gate miss falls back to PATH-A. See
+``docs/plans/FLAT_OVERVIEW_SERVING_DESIGN.md`` section 6.
+
 Project-level policy (the coverage threshold, FAIL/WARN/INFO severity, the
 blessed analysis-resolution set) stays in ``fire_interval`` — this module is
 generic geometry. The alignment gate is generic enough to eventually graduate
-to ``raster_tools`` itself.
+to ``raster_tools`` itself. The PATH-B gate reads only the COG's own stamped
+tag (no ``fire_interval`` / ``fire-data-engineering`` import) so the
+``fire_interval -> mtbs_fire_analysis`` dependency direction is preserved.
 
 ``fire_interval.cog`` re-exports ``read_onto_geobox`` /
 ``_assert_geobox_alignment`` for back-compat with existing importers.
@@ -34,6 +49,7 @@ to ``raster_tools`` itself.
 
 from __future__ import annotations
 
+import os
 import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
@@ -54,6 +70,7 @@ def read_onto_geobox(
     resample_method: ResamplingName,
     require_nodata: bool = True,
     require_native_resolution: bool = False,
+    prefer_overview: bool | None = None,
 ) -> rts.Raster:
     """Read a raster onto the canonical analysis ``geobox`` via a
     flat-from-base reproject (PATH A), with a fail-loud alignment gate.
@@ -103,6 +120,16 @@ def read_onto_geobox(
             conservation gate can catch it — the guard is the only place the
             error is visible. Leave False for the ``mode``/``average`` reads,
             which legitimately reduce the 30 m base onto a coarse geobox.
+        prefer_overview: PATH-B fast-read switch. ``None`` (default) consults
+            the ``FIRE_PATHB_OVERVIEWS`` env flag; ``True``/``False`` force it
+            on/off per-call (deterministic for tests). When effective-on AND
+            ``path`` carries a ``FLAT_FROM_BASE_<RED>_FACTORS`` tag listing the
+            requested decimation factor, the matching flat-from-base overview
+            level is served directly (exact == PATH-A, no base re-reduction);
+            any gate miss (no tag, factor absent, ``nearest``/``bilinear``,
+            native resolution) silently falls back to PATH-A. Default-off +
+            unset env = byte-identical PATH-A — the load-bearing back-compat
+            contract for this shared upstream primitive.
 
     Returns:
         The lazy reprojected ``rts.Raster`` on ``geobox``.
@@ -115,9 +142,16 @@ def read_onto_geobox(
     """
     if require_native_resolution:
         _assert_source_is_native_resolution(path, geobox)
-    if require_nodata:
+
+    # One metadata open serves both the nodata gate and the PATH-B overview
+    # gate (avoids a second rasterio.open per read).
+    pathb = _pathb_enabled(prefer_overview)
+    overview_index: int | None = None
+    src_nodata = None
+    if require_nodata or pathb:
         with rasterio.open(str(path)) as ds:
-            if ds.nodata is None:
+            src_nodata = ds.nodata
+            if require_nodata and src_nodata is None:
                 raise ValueError(
                     f"read_onto_geobox: source {path} carries no nodata tag; "
                     f"the flat-from-base {resample_method!r} nodata-exclusion "
@@ -128,13 +162,121 @@ def read_onto_geobox(
                     "coarse geobox, or pass require_nodata=False for a source "
                     "with no sentinel values."
                 )
+            if pathb:
+                overview_index = _pathb_overview_index(
+                    ds, geobox, resample_method
+                )
 
-    import raster_tools as rts
+    if overview_index is not None:
+        out = _read_overview_onto_geobox(
+            path, geobox, overview_index, src_nodata
+        )
+    else:
+        import raster_tools as rts
 
-    src = rts.Raster(str(path))
-    out = src.reproject(geobox, resample_method=resample_method)
+        src = rts.Raster(str(path))
+        out = src.reproject(geobox, resample_method=resample_method)
     _assert_geobox_alignment(out, geobox, path)
     return out
+
+
+def _pathb_enabled(prefer_overview: bool | None) -> bool:
+    """PATH-B is on when ``prefer_overview`` is True, or None + the env flag.
+
+    The default ``None`` defers to ``FIRE_PATHB_OVERVIEWS`` (the operational
+    cutover switch, mirroring ``FIRE_PIXEL_M`` / ``FIRE_NLCD_SUBDIR``); an
+    explicit bool overrides it for deterministic per-call testing. Unset env +
+    unpassed param = OFF = byte-identical PATH-A.
+    """
+    if prefer_overview is not None:
+        return bool(prefer_overview)
+    val = os.environ.get("FIRE_PATHB_OVERVIEWS")
+    return val is not None and val.strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _pathb_overview_index(
+    ds: "rasterio.DatasetReader",
+    geobox: GeoBox,
+    resample_method: ResamplingName,
+) -> int | None:
+    """Overview index for a PATH-B read, or None → fall back to PATH-A.
+
+    Eligible only when (a) the request is ``mode``/``average`` (the
+    flat-from-base reductions; ``nearest``/``bilinear`` never have a
+    flat-overview contract), (b) the target/base resolution ratio is an
+    integer factor > 1, (c) ``path`` carries the injector's
+    ``FLAT_FROM_BASE_<RED>_FACTORS`` provenance tag listing that factor, and
+    (d) a stored overview band exists at that decimation. The tag — not a bare
+    ``OVERVIEW_RESAMPLING`` value — is the gate: a stock cascade-mode or
+    ceil-grid average overview carries ``OVERVIEW_RESAMPLING`` but rides GDAL's
+    ratio grid and would silently serve values drifted from the analysis grid
+    (categorical 5.6–52 %, continuous ~2.4 m on the DEM). Only the
+    ``FLAT_FROM_BASE`` marker certifies integer-f == PATH-A for *both*
+    reduction kinds — the option-A exact-serving decision (supersedes the
+    design memo's earlier "bare AVERAGE is sufficient" note).
+    """
+    red = {"mode": "MODE", "average": "AVERAGE"}.get(resample_method)
+    if red is None:
+        return None
+    base_res = abs(ds.transform.a)
+    target_res = abs(geobox.transform.a)
+    if base_res <= 0.0:
+        return None
+    ratio = target_res / base_res
+    factor = int(round(ratio))
+    if factor <= 1 or abs(ratio - factor) > 1e-6 * factor:
+        return None  # native (identity) or non-integer factor → PATH-A
+    tag = ds.tags().get(f"FLAT_FROM_BASE_{red}_FACTORS", "")
+    flat_factors = {int(x) for x in tag.split(",") if x.strip()}
+    if factor not in flat_factors:
+        return None  # not a flat-from-base overview for this factor → PATH-A
+    overviews = ds.overviews(1)
+    if factor not in overviews:
+        return None  # tag claims the factor but the band is absent → PATH-A
+    return overviews.index(factor)
+
+
+def _read_overview_onto_geobox(
+    path: Path,
+    geobox: GeoBox,
+    overview_index: int,
+    nodata,
+) -> rts.Raster:
+    """Serve a flat-from-base overview band directly onto ``geobox`` (PATH-B).
+
+    ``rts.Raster(path)`` always opens the base band, so the overview is read
+    via ``rioxarray`` (lazy/dask-backed) at ``overview_index``. The stored
+    overview has GDAL's ceil dims; its interior ``[:floor]`` cells ARE the
+    integer-f flat blocks and the extra ceil row/col is the all-nodata CONUS
+    frame, so we slice to the ``geobox`` floor shape and stamp the exact
+    analysis-grid coordinates (the overview's own transform is the fictional
+    ceil-grid pixel ~119.9976 m — assigning ``geobox`` coords, not just
+    ``write_transform``, is what fixes the geobox ``rts`` derives from the x/y
+    coords). The result lands on ``geobox`` by construction, so the shared
+    ``_assert_geobox_alignment`` gate passes.
+    """
+    import raster_tools as rts
+    import rioxarray
+    from odc.geo.xr import xr_coords
+
+    floor_h, floor_w = geobox.shape
+    da = rioxarray.open_rasterio(
+        str(path),
+        overview_level=overview_index,
+        chunks=True,
+        lock=False,
+        masked=False,
+    )
+    da = da.isel(y=slice(0, floor_h), x=slice(0, floor_w))
+    da = da.assign_coords(xr_coords(geobox, dims=("y", "x")))
+    if nodata is not None:
+        da = da.rio.write_nodata(nodata)
+    return rts.Raster(da)
 
 
 def sample_on_geobox(
