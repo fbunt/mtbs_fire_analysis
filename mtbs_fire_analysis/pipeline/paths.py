@@ -143,7 +143,23 @@ RAW_NLCD = NLCD_DIR / "raw"
 # canonical C1V1 driver product (the "C1b repoint").
 NLCD_PATH = NLCD_DIR / os.environ.get("FIRE_NLCD_SUBDIR", "cleaned")
 NLCD_STACK_VRT_PATH = NLCD_PATH / "nlcd_1984_2022.vrt"
-NLCD_MODE_RASTER_PATH = NLCD_PATH / "nlcd_mode_1984_2022.tif"
+# The static modal-NLCD census raster (one file spanning all years) is a
+# *separate* artifact from the per-year NLCD rasters — it is NOT rebuilt into
+# the flat-overview ``grouped/`` layout. Give it its own subdir hook so the
+# cutover flip (FIRE_NLCD_SUBDIR=grouped, to serve the per-year reads off the
+# flat-from-base PATH-B COGs) does not drag the census into ``grouped/`` (no
+# nlcd_mode_*.tif there → FileNotFound for every static-mode reader). Unset
+# FIRE_NLCD_MODE_SUBDIR falls back to FIRE_NLCD_SUBDIR, so today's deployments
+# (incl. FIRE_NLCD_SUBDIR=cog) stay byte-identical (back-compat). At cutover,
+# set FIRE_NLCD_MODE_SUBDIR=cog_<N>m to keep the census on its per-res
+# precompute while the per-year leg moves to ``grouped/``. See the register
+# D-2026-06-15-static-mode-env-hook (option b) + FLAT_OVERVIEW_CUTOVER_PLAN.
+_NLCD_MODE_SUBDIR = os.environ.get("FIRE_NLCD_MODE_SUBDIR") or os.environ.get(
+    "FIRE_NLCD_SUBDIR", "cleaned"
+)
+NLCD_MODE_RASTER_PATH = (
+    NLCD_DIR / _NLCD_MODE_SUBDIR / "nlcd_mode_1984_2022.tif"
+)
 ELEVATION_DIR = MTBS_ROOT / "edna"
 ELEVATION_RAW_PATH = ELEVATION_DIR / "raw" / "us_orig_dem.tif"
 ELEVATION_CLEANED_DIR = ELEVATION_DIR / "cleaned"
