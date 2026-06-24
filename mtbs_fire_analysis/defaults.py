@@ -21,25 +21,31 @@ _BASE_GEOHASH_AFFINE = Affine(
 )
 _BASE_GEOHASH_GRID_SHAPE = (100150, 157144)
 
-# --- Divisible-by-64 canonical grid (substrate-overhaul Phase 3) -----------
-# The legacy base shape (100150, 157144) is NOT divisible by the base-2
-# overview ladder {2,4,8,16,32,64}, so coarse grids hit floor/ceil drift.
-# FIRE_DIVISIBLE_GRID selects a nodata-padded shape that IS divisible by 64
-# (the LCM of the ladder): every existing 30 m pixel index [i,j] is unchanged,
-# only all-nodata cells are appended at the south/east edge beyond CONUS, so on
-# the padded grid floor == ceil at every base-2 factor. Default OFF preserves
-# the legacy shape byte-identically, so upstream/Fred users are unaffected
-# (env-hook, not a default swap -- mirrors FIRE_PIXEL_M / FIRE_NLCD_SUBDIR).
+# --- Divisible-by-256 canonical grid (substrate-overhaul Phase 3) ----------
+# The legacy base shape (100150, 157144) is NOT divisible by the base-2 overview
+# ladder, so coarse grids hit floor/ceil drift. FIRE_DIVISIBLE_GRID selects a
+# nodata-padded shape divisible by 256 (= 2**8): every existing 30 m pixel index
+# [i,j] is unchanged, only all-nodata cells are appended at the south/east edge
+# beyond CONUS, so floor == ceil at every base-2 factor up to 256
+# (30 m * 256 = 7680 m). The committed analysis ladder {30,120,480,1920} m only
+# needs factor 64 (1920/30); 256 is chosen for HEADROOM -- it costs only ~192
+# extra all-nodata rows (the width, hence every geohash, is identical to a *64
+# pad: 157184 is already divisible by 256) but future-proofs against ever
+# extending the ladder coarser, which would otherwise force a SECOND
+# geohash-table re-pad cutover. Default OFF preserves the legacy shape
+# byte-identically, so upstream/Fred users are unaffected (env-hook, not a
+# default swap -- mirrors FIRE_PIXEL_M / FIRE_NLCD_SUBDIR).
 # ! The pad is additive for the SPATIAL index [i,j] but NOT for the geohash
-# LINEAR index (geohash = row*W + col): changing W shifts every geohash, so on
-# flip every stored geohash-keyed table must be regenerated and guarded against
-# cross-grid joins. See docs/plans/SUBSTRATE_OVERHAUL_PHASE3_EXECUTION.md.
-_PADDED_GEOHASH_GRID_SHAPE = (100160, 157184)
+# LINEAR index (geohash = row*W + col): legacy W=157144 -> padded W=157184
+# shifts every geohash, so on flip every stored geohash-keyed table must be
+# regenerated and guarded against cross-grid joins. See
+# docs/plans/SUBSTRATE_OVERHAUL_PHASE3_EXECUTION.md.
+_PADDED_GEOHASH_GRID_SHAPE = (100352, 157184)
 
 
 def divisible_grid_from_env():
     """Whether ``FIRE_DIVISIBLE_GRID`` selects the nodata-padded,
-    divisible-by-64 base grid.
+    divisible-by-256 base grid.
 
     Unset/empty/``0``/``false``/``no``/``off`` => ``False`` (the legacy
     unpadded grid is preserved byte-identically, so existing upstream users
@@ -54,7 +60,7 @@ def divisible_grid_from_env():
 def base_grid_shape(padding_enabled=None):
     """The active 30 m base-grid ``(height, width)``.
 
-    Returns the nodata-padded divisible-by-64 shape when padding is enabled
+    Returns the nodata-padded divisible-by-256 shape when padding is enabled
     (explicit ``padding_enabled`` overrides; ``None`` defers to
     ``divisible_grid_from_env()``), else the legacy unpadded shape.
     """
@@ -116,7 +122,7 @@ def coarsening_dropped_area_fraction(pixel_m, padding_enabled=None):
     The dropped cells are the partial bottom/right edge that does not complete
     a full ``pixel_m`` x ``pixel_m`` block. Returns ``0.0`` when ``pixel_m``
     divides the active base shape exactly on both axes (always at 30 m; and at
-    every base-2 factor on the divisible-by-64 padded grid -- see
+    every base-2 factor on the divisible-by-256 padded grid -- see
     ``base_grid_shape``). ``padding_enabled`` overrides the env hook.
     """
     if pixel_m <= 0 or pixel_m % BASE_PIXEL_M != 0:
@@ -159,7 +165,7 @@ def grid_for_pixel_m(pixel_m, padding_enabled=None):
 
     The base shape follows the active grid (``base_grid_shape`` /
     ``FIRE_DIVISIBLE_GRID``); ``padding_enabled`` overrides the env hook. On
-    the divisible-by-64 padded grid floor == ceil at every base-2 factor, so
+    the divisible-by-256 padded grid floor == ceil at every base-2 factor, so
     no edge cell is dropped for the blessed resolutions.
     """
     if pixel_m <= 0 or pixel_m % BASE_PIXEL_M != 0:
