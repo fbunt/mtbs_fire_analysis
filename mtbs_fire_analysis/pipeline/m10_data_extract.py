@@ -17,6 +17,7 @@ from mtbs_fire_analysis.defaults import (
     DEFAULT_CRS,
     PIXEL_M,
     geobox_for_pixel_m,
+    grid_for_pixel_m,
 )
 from mtbs_fire_analysis.geohasher import GridGeohasher
 from mtbs_fire_analysis.grid_identity import write_grid_sidecar
@@ -117,25 +118,61 @@ def _require_membership_path(env_var: str, layer: str) -> str:
 
 
 def _assert_membership_resolution(path: str, pixel_m: int) -> None:
-    """Fail loud if a membership raster's native pixel size != ``pixel_m``.
+    """Fail loud unless a membership raster sits on the analysis grid at
+    ``pixel_m`` -- exact shape + origin, not pixel size alone.
 
-    The ``*_ID_RASTER_PATH`` env vars carry no resolution tag, so pointing a
-    ``FIRE_PIXEL_M=120`` run at the 30 m raster would silently mode-reduce it
+    The ``*_ID_RASTER_PATH`` env vars carry no resolution/grid tag, so pointing
+    a ``FIRE_PIXEL_M=120`` run at the 30 m raster would silently mode-reduce it
     (``read_onto_geobox`` flat-from-base) to a value that does NOT equal the
     baked 120 m single-assignment grid, while the geobox alignment gate still
-    passes -- a silent value divergence. Guard at the read; same spirit as
-    ``raster_read._assert_source_is_native_resolution``.
+    passes -- a silent value divergence (the 2026-06-09 silent-bug class).
+
+    A **pixel-size-only** check is not enough across the divisible-grid cutover
+    (substrate-overhaul Phase 3): the pad keeps the pixel size and origin and
+    only grows ``(height, width)`` at the S/E edge, so a stale *unpadded*
+    membership raster (or any wrong-grid raster of coincidentally-matching
+    pixel size) would pass a size check yet mis-register the row strips against
+    the padded BP grid. So assert the **exact** target grid -- shape AND
+    transform (origin + resolution) -- against ``grid_for_pixel_m(pixel_m)``,
+    which follows the active ``FIRE_DIVISIBLE_GRID`` env. Same spirit as
+    ``raster_read._assert_source_is_native_resolution`` and
+    ``ingest._common.grid_check.grid_alignment_check``.
     """
     import rasterio
 
+    exp_affine, (exp_h, exp_w) = grid_for_pixel_m(pixel_m)
     with rasterio.open(path) as ds:
         res = abs(ds.transform.a)
+        shape = (ds.height, ds.width)
+        tr = ds.transform
     if abs(res - pixel_m) > 1e-6 * pixel_m:
         raise ValueError(
             f"membership raster {path} native pixel size {res} m != analysis "
             f"FIRE_PIXEL_M {pixel_m} m. Point ECO_ID_RASTER_PATH / "
             f"HEX_ID_RASTER_PATH at the resolution-matched raster "
             f"(e.g. eco_lvl_3_{pixel_m}m.tif / hexel_id_{pixel_m}m.tif)."
+        )
+    if shape != (exp_h, exp_w):
+        raise ValueError(
+            f"membership raster {path} shape {shape} != analysis grid "
+            f"{(exp_h, exp_w)} at {pixel_m} m. A coincidentally-matching "
+            "pixel size on the wrong (e.g. unpadded vs divisible-padded) "
+            "grid mis-registers the row strips silently -- point at the "
+            "grid-matched raster or re-encode it onto the active grid "
+            "(FIRE_DIVISIBLE_GRID)."
+        )
+    # Origin + pixel size to sub-pixel tolerance (mirrors grid_check tols:
+    # pixel exact to round-off, origin within a pixel).
+    if not (
+        abs(tr.a - exp_affine.a) <= 1e-6
+        and abs(tr.e - exp_affine.e) <= 1e-6
+        and abs(tr.c - exp_affine.c) <= 1e-3
+        and abs(tr.f - exp_affine.f) <= 1e-3
+    ):
+        raise ValueError(
+            f"membership raster {path} transform {tr!r} != analysis grid "
+            f"transform {exp_affine!r} at {pixel_m} m -- origin/resolution "
+            "mismatch yields silent geographic mis-registration."
         )
 
 
