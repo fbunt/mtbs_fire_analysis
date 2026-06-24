@@ -1,3 +1,5 @@
+import hashlib
+import json
 import os
 import warnings
 
@@ -63,6 +65,36 @@ def base_grid_shape(padding_enabled=None):
         if padding_enabled
         else _BASE_GEOHASH_GRID_SHAPE
     )
+
+
+def grid_descriptor(grid_shape, affine):
+    """Canonical, JSON-serializable identity of a geohash grid.
+
+    The geohash LINEAR index (``geohasher.py``:
+    ``ravel_multi_index((row,col), grid_shape) = row*W + col``) is fully
+    determined by the grid ``shape`` (the stride ``W``) and the ``affine``
+    (which maps a point's xy to its ``(row,col)``). Two geohash-keyed tables
+    are join-compatible iff both match. ``FIRE_DIVISIBLE_GRID`` changes ``W``,
+    so the padded grid has a DIFFERENT descriptor than the legacy grid
+    (substrate-overhaul Phase 3, §1: the pad is additive for the spatial index
+    ``[i,j]`` but NOT for the geohash linear index).
+    """
+    h, w = grid_shape
+    return {
+        "grid_shape": [int(h), int(w)],
+        "affine": [float(c) for c in tuple(affine)[:6]],
+    }
+
+
+def grid_id_from(grid_shape, affine):
+    """Short stable hash of ``grid_descriptor`` -- the geohash compatibility
+    key stamped on geohash-keyed outputs and compared at join sites."""
+    blob = json.dumps(
+        grid_descriptor(grid_shape, affine),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha1(blob.encode("utf-8")).hexdigest()[:12]
 
 
 # --- Coarsening edge-drop guard --------------------------------------------

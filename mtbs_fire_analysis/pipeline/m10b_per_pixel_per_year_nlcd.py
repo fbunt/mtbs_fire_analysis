@@ -68,6 +68,9 @@ from data_pipeline_invariants import rasterize_eco_polygons  # noqa: E402
 
 from mtbs_fire_analysis.defaults import pixel_m_from_env  # noqa: E402
 from mtbs_fire_analysis.geohasher import GridGeohasher  # noqa: E402
+from mtbs_fire_analysis.grid_identity import (  # noqa: E402
+    write_grid_sidecar,
+)
 from mtbs_fire_analysis.pipeline.paths import (  # noqa: E402
     ECO_REGIONS_PATH,
     EVER_BURNED_MASK_PATH,
@@ -519,6 +522,10 @@ def main() -> int:
         f"(build {df_build_seconds:.1f}s, write {write_seconds:.1f}s, "
         f"total {parquet_bytes / 1e9:.2f} GB across {n_chunks} chunks)"
     )
+    # Stamp the geohash grid identity beside the chunked output so the a00
+    # cross-table join (m10 extract ⋈ this m10b frame on geohash) can verify
+    # both were built on the same grid (substrate-overhaul §2b).
+    write_grid_sidecar(out_dir, hasher)
     out_parquet = out_dir
 
     expected_total = n_pixels * SPIKE_SECONDS_PER_PIXEL_PER_YEAR * N_YEARS

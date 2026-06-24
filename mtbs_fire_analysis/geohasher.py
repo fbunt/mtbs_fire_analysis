@@ -11,6 +11,8 @@ from mtbs_fire_analysis.defaults import (
     DEFAULT_CRS,
     DEFAULT_GEOHASH_AFFINE,
     DEFAULT_GEOHASH_GRID_SHAPE,
+    grid_descriptor,
+    grid_id_from,
 )
 
 
@@ -29,6 +31,21 @@ class GridGeohasher:
         self.yres_half = grid_affine.e / 2
         self.grid_shape = grid_shape
         self.crs = crs
+
+    @property
+    def grid_descriptor(self):
+        """Canonical identity of the grid this geohasher hashes with
+        (``mtbs_fire_analysis.defaults.grid_descriptor``)."""
+        return grid_descriptor(self.grid_shape, self.affine)
+
+    @property
+    def grid_id(self):
+        """Short stable hash of this geohasher's grid -- the geohash
+        compatibility key (``defaults.grid_id_from``). Stamped on
+        geohash-keyed outputs; compared at join sites to catch a
+        cross-grid (e.g. padded-vs-legacy) join before it silently
+        mis-matches. See ``mtbs_fire_analysis.grid_identity``."""
+        return grid_id_from(self.grid_shape, self.affine)
 
     def geohash(self, geometry):
         x = geometry.x.to_numpy()

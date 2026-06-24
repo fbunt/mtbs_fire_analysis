@@ -9,6 +9,11 @@ import raster_tools as rts
 from dask.diagnostics import ProgressBar
 
 from mtbs_fire_analysis.geohasher import GridGeohasher
+from mtbs_fire_analysis.grid_identity import (
+    assert_matches_active,
+    read_grid_sidecar,
+    write_grid_sidecar,
+)
 from mtbs_fire_analysis.pipeline.paths import get_mtbs_raster_path
 
 
@@ -70,6 +75,14 @@ def join_raster_to_frame(name, raster_path, frame_path, mtbs_path, out_path):
     fetcher = _get_raster_fetcher(raster_path, mtbs_path)
     print("Loading dataframe")
     points = dd.read_parquet(frame_path).compute()
+    # The loaded frame's geohashes were stamped at build time; _add_raster
+    # geohashes the raster points fresh on the ACTIVE grid. Fail loud if the
+    # stored frame was built on a different grid (substrate-overhaul §2b).
+    assert_matches_active(
+        read_grid_sidecar(frame_path),
+        label=str(frame_path),
+        context="m11 join_raster_to_frame",
+    )
     print(f"Size initial: {len(points):,}. Loss/gain: {(len(points) - 0):+,}")
     n = len(points)
 
@@ -84,6 +97,8 @@ def join_raster_to_frame(name, raster_path, frame_path, mtbs_path, out_path):
     nparts = max(int(np.round(n / TARGET_POINTS_PER_PARTITION)), 1)
     points = dd.from_pandas(points, npartitions=nparts)
     points.to_parquet(out_path)
+    # Stamp the (active) grid identity on the joined output (geohash-keyed).
+    write_grid_sidecar(out_path, GridGeohasher())
 
 
 def main(name, frame_files, raster_files):

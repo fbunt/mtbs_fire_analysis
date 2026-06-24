@@ -19,6 +19,7 @@ from mtbs_fire_analysis.defaults import (
     geobox_for_pixel_m,
 )
 from mtbs_fire_analysis.geohasher import GridGeohasher
+from mtbs_fire_analysis.grid_identity import write_grid_sidecar
 from mtbs_fire_analysis.pipeline.paths import (
     ECO_REGIONS_PATH,
     ELEVATION_PATH,
@@ -595,6 +596,10 @@ def _build_dataframe_and_save(
     nparts = max(int(np.round(n / TARGET_POINTS_PER_PARTITION)), 1)
     points = dd.from_pandas(points, npartitions=nparts)
     points.to_parquet(out_path)
+    # Stamp the geohash grid identity beside the output so a downstream
+    # cross-grid join (e.g. a padded vs legacy m10/m10b pair) fails loud
+    # instead of mis-matching silently (substrate-overhaul §2b).
+    write_grid_sidecar(out_path, hasher)
 
 
 def save_raster_to_points(years, crs, drop_extra_cols):
