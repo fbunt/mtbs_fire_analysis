@@ -5,6 +5,8 @@ import numpy as np
 
 from mtbs_fire_analysis.defaults import DEFAULT_CRS
 from mtbs_fire_analysis.pipeline.paths import (
+    MTBS_PERIM_YEAR_END,
+    MTBS_PERIM_YEAR_START,
     PERIMS_BY_YEAR_PATH,
     PERIMS_PATH,
     RAW_PERIMS_PATH,
@@ -63,7 +65,9 @@ def split_perims_by_year():
     print("Splitting perims by year")
     perims = gpd.read_file(PERIMS_PATH).sort_values("Ig_Date")
     for y, grp in perims.groupby(perims.Ig_Date.dt.year):
-        if y in set(range(1984, 2023)):
+        # Year window is the single source of truth in paths.py — bump
+        # MTBS_PERIM_YEAR_END there to extend (default 2022 → byte-identical).
+        if y in set(range(MTBS_PERIM_YEAR_START, MTBS_PERIM_YEAR_END + 1)):
             print(f"Saving {y}")
             grp.to_file(PERIMS_BY_YEAR_PATH, layer=str(y))
 

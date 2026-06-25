@@ -37,5 +37,10 @@ rasterize() {
 # exported or every job fails with "rasterize: command not found".
 export -f exe rasterize
 
+# Year window is the single source of truth in paths.py (same constants m00
+# uses) — bump MTBS_PERIM_YEAR_END there to extend; default 1984-2022 is
+# byte-identical to the former hardcoded `seq 1984 2022`.
+YEARS=$(python -c "from mtbs_fire_analysis.pipeline.paths import MTBS_PERIM_YEAR_START, MTBS_PERIM_YEAR_END; print(*range(MTBS_PERIM_YEAR_START, MTBS_PERIM_YEAR_END + 1))")
+
 parallel -j 4 --tag --verbose --linebuffer --keep-order \
-    rasterize {} ::: $(seq 1984 2022)
+    rasterize {} ::: ${YEARS}
