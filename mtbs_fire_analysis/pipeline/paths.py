@@ -234,6 +234,16 @@ def get_nlcd_mode_raster_path(y_end=2022):
     return NLCD_DIR / _NLCD_MODE_SUBDIR / f"nlcd_mode_1984_{y_end}.tif"
 
 
+def census_cutoff_year(scored_year):
+    # Prediction-grain seam (PREDICTION_GRAIN_SPEC.md / D-2026-07-01): the
+    # leak-free zero-fire census for a prediction targeting scored year Y may
+    # use land cover only strictly before Y — i.e. NLCD years <= Y-1. Config #0
+    # (cal_year_v0, ships today) => Y-1. Deliberately ONE function so the
+    # year-bucketing is re-keyable to config #1 (the fire-season anchor,
+    # D-2026-06-30) without editing every caller; do NOT inline `Y-1`.
+    return scored_year - 1
+
+
 def get_wui_flavor_path(year, flavor):
     if year < 2000:
         y = 1990
