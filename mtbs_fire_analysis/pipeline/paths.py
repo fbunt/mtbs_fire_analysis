@@ -221,6 +221,19 @@ def get_nlcd_raster_path(year):
     return NLCD_PATH / NLCD_TIF_FMT.format(year=year)
 
 
+def get_nlcd_mode_raster_path(y_end=2022):
+    # Static modal-NLCD census spanning 1984..y_end inclusive. y_end defaults
+    # to 2022 so a bare call reproduces NLCD_MODE_RASTER_PATH byte-for-byte
+    # (back-compat — every current reader keeps the all-years census). Phase-2
+    # Flavor-B (D-2026-06-29) per-scored-year callers pass y_end=Y-1 to bind
+    # the leak-free census frozen at analysis cutoff Y. The subdir (incl. its
+    # resolution stamp, e.g. grouped_<N>m) is inherited from _NLCD_MODE_SUBDIR
+    # exactly as the all-years constant — the <N>m comes from
+    # FIRE_NLCD_MODE_SUBDIR, NOT from FIRE_PIXEL_M (do NOT append _RES_SUFFIX,
+    # it would double-stamp).
+    return NLCD_DIR / _NLCD_MODE_SUBDIR / f"nlcd_mode_1984_{y_end}.tif"
+
+
 def get_wui_flavor_path(year, flavor):
     if year < 2000:
         y = 1990
