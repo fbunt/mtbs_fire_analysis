@@ -3,7 +3,7 @@
 The geohash LINEAR index (``geohasher.py``:
 ``ravel_multi_index((row, col), grid_shape) = row*W + col``) depends on the
 active grid's ``shape`` (the stride ``W``) and ``affine``. The
-substrate-overhaul divisible-by-64 pad (``FIRE_DIVISIBLE_GRID``) changes the
+substrate-overhaul divisible-by-256 pad (``FIRE_DIVISIBLE_GRID``) changes the
 grid width, so a geohash-keyed table is only join-compatible with another
 table built on the SAME grid. A join across grids mis-matches **silently**
 (wrong/empty rows, no error) -- a higher-severity failure than the raw-array
@@ -71,10 +71,18 @@ def active_grid_payload() -> dict:
     }
 
 
-def _sidecar_for(out_path: "str | Path") -> Path:
-    """Sidecar path for a geohash-keyed output (directory or single file)."""
+def _sidecar_for(out_path: "str | Path", *, beside: bool = False) -> Path:
+    """Sidecar path for a geohash-keyed output (directory or single file).
+
+    ``beside=True`` forces the ``<path>.grid.json`` file-suffix form even for a
+    directory output, placing the sidecar BESIDE the dir rather than inside it.
+    Use this when a ``_grid_identity.json`` *inside* the partitioned dir would
+    break a bare ``pl.scan_parquet(dir)`` / ``dd.read_parquet(dir)`` reader of
+    that dir (polars errors on "different file extensions").
+    ``read_grid_sidecar`` resolves both forms, so beside is transparent.
+    """
     path = Path(out_path)
-    if path.is_dir():
+    if path.is_dir() and not beside:
         return path / SIDECAR_DIR_NAME
     return Path(f"{path}{SIDECAR_FILE_SUFFIX}")
 
@@ -99,7 +107,9 @@ def _padding_state_of(geohasher):
     return None
 
 
-def write_grid_sidecar(out_path, geohasher, *, extra=None) -> Path:
+def write_grid_sidecar(
+    out_path, geohasher, *, extra=None, beside=False
+) -> Path:
     """Stamp ``geohasher``'s grid identity next to a geohash-keyed output.
 
     Call this AFTER the parquet write -- a partitioned-dir output needs the
@@ -110,6 +120,12 @@ def write_grid_sidecar(out_path, geohasher, *, extra=None) -> Path:
         out_path: the parquet output (dask partitioned directory or file).
         geohasher: the ``GridGeohasher`` whose grid produced the geohashes.
         extra: optional extra fields to fold into the sidecar payload.
+        beside: force the ``<path>.grid.json`` beside-form even for a dir
+            output (default False = ``_grid_identity.json`` inside the dir).
+            Use for a dir whose bare ``pl.scan_parquet(dir)`` readers would
+            break on an in-dir non-parquet file (e.g. the m20 combined frame,
+            read bare by a00 / validate / a36). ``read_grid_sidecar`` resolves
+            both forms transparently.
 
     Returns:
         The sidecar path written, or ``None`` if the stamp write failed
@@ -125,7 +141,7 @@ def write_grid_sidecar(out_path, geohasher, *, extra=None) -> Path:
     }
     if extra:
         payload.update(extra)
-    sidecar = _sidecar_for(out_path)
+    sidecar = _sidecar_for(out_path, beside=beside)
     try:
         sidecar.write_text(json.dumps(payload, indent=2, sort_keys=True))
     except OSError as exc:
