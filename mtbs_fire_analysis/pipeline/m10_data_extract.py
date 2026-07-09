@@ -245,7 +245,6 @@ def _build_dataframe_and_save(
     if drop_extra:
         extra_cols = [
             "Asmnt_Type",
-            "area_acres",
             "days_since_epoch",
             "dNBR_offst",
             "dNBR_stdDv",
