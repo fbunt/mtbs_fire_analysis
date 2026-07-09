@@ -198,6 +198,8 @@ def _build_dataframe_and_save(
     perims_raster_path,
     mtbs_path,
     nlcd_path,
+    nlcd_pre_path,
+    nlcd_post_path,
     wui_flag_path,
     wui_class_path,
     wui_bool_path,
@@ -307,6 +309,12 @@ def _build_dataframe_and_save(
     points, n = _add_raster_with_stats(
         points, nlcd_path, "nlcd", burned_indices, n
     )
+    points, n = _add_raster_with_stats(
+        points, nlcd_pre_path, "nlcd_pre", burned_indices, n
+    )
+    points, n = _add_raster_with_stats(
+        points, nlcd_post_path, "nlcd_post", burned_indices, n
+    )
     points = _add_raster_with_stats(
         points, NLCD_MODE_RASTER_PATH, "nlcd_mode", burned_indices
     )
@@ -345,6 +353,8 @@ def save_raster_to_points(years, crs, drop_extra_cols):
         perims_raster_path = get_mtbs_perims_raster_path(year)
         mtbs_path = get_mtbs_raster_path(year, "CONUS")
         nlcd_path = get_nlcd_raster_path(year)
+        nlcd_pre_path = get_nlcd_raster_path(max(year - 1, 1984))
+        nlcd_post_path = get_nlcd_raster_path(year + 1)
         wui_flag_path = get_wui_flavor_path(year, "flag")
         wui_class_path = get_wui_flavor_path(year, "class")
         wui_bool_path = get_wui_flavor_path(year, "bool")
@@ -366,6 +376,8 @@ def save_raster_to_points(years, crs, drop_extra_cols):
                 perims_raster_path,
                 mtbs_path,
                 nlcd_path,
+                nlcd_pre_path,
+                nlcd_post_path,
                 wui_flag_path,
                 wui_class_path,
                 wui_bool_path,
