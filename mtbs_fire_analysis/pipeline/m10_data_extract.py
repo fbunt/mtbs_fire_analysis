@@ -177,6 +177,18 @@ def _get_wui_raster(wui_path, mtbs_path):
     )
 
 
+def _add_raster_with_stats(
+    points, data_path, name, burned_indices, n, how=None
+):
+    points = _add_raster(points, data_path, name, burned_indices, how=None)
+    print(
+        f"Size after join({name}): {len(points):,}"
+        f" Loss/gain: {(len(points) - n):+,}"
+    )
+    n = len(points)
+    return points, n
+
+
 TARGET_POINTS_PER_PARTITION = 1_200_000
 
 
@@ -280,13 +292,10 @@ def _build_dataframe_and_save(
         points.geohash.drop_duplicates().to_numpy()
     )
 
-    points = _add_raster(points, mtbs_path, "bs", burned_indices, how="left")
-    points = points.astype({"bs": pd.ArrowDtype(pyarrow.int8())})
-    print(
-        f"Size after join(bs): {len(points):,}"
-        f" Loss/gain: {(len(points) - n):+,}"
+    points = _add_raster_with_stats(
+        points, mtbs_path, "bs", burned_indices, n, how="left"
     )
-    n = len(points)
+    points = points.astype({"bs": pd.ArrowDtype(pyarrow.int8())})
     # Drop non-severity pixels
     # points = points[points.bs < 5]
     # print(
@@ -295,51 +304,27 @@ def _build_dataframe_and_save(
     # )
     # n = len(points)
 
-    points = _add_raster(points, nlcd_path, "nlcd", burned_indices)
-    print(
-        f"Size after join(nlcd): {len(points):,}"
-        f" Loss/gain: {(len(points) - n):+,}"
+    points, n = _add_raster_with_stats(
+        points, nlcd_path, "nlcd", burned_indices, n
     )
-    n = len(points)
-    points = _add_raster(
+    points = _add_raster_with_stats(
         points, NLCD_MODE_RASTER_PATH, "nlcd_mode", burned_indices
     )
-    print(
-        f"Size after join(nlcd_mode): {len(points):,}"
-        f" Loss/gain: {(len(points) - n):+,}"
+    points = _add_raster_with_stats(
+        points, wui_flag_path, "wui_flag", burned_indices, n
     )
-    n = len(points)
-    points = _add_raster(points, wui_flag_path, "wui_flag", burned_indices)
-    print(
-        f"Size after join(wui_flag): {len(points):,}"
-        f" Loss/gain: {(len(points) - n):+,}"
+    points = _add_raster_with_stats(
+        points, wui_class_path, "wui_class", burned_indices, n
     )
-    n = len(points)
-    points = _add_raster(points, wui_class_path, "wui_class", burned_indices)
-    print(
-        f"Size after join(wui_class): {len(points):,}"
-        f" Loss/gain: {(len(points) - n):+,}"
+    points = _add_raster_with_stats(
+        points, wui_bool_path, "wui_bool", burned_indices, n
     )
-    n = len(points)
-    points = _add_raster(points, wui_bool_path, "wui_bool", burned_indices)
-    print(
-        f"Size after join(wui_bool): {len(points):,}"
-        f" Loss/gain: {(len(points) - n):+,}"
+    points = _add_raster_with_stats(
+        points, wui_prox_path, "wui_prox", burned_indices, n
     )
-    n = len(points)
-
-    points = _add_raster(points, wui_prox_path, "wui_prox", burned_indices)
-    print(
-        f"Size after join(wui_prox): {len(points):,}"
-        f" Loss/gain: {(len(points) - n):+,}"
+    points = _add_raster_with_stats(
+        points, elevation_path, "elevation", burned_indices, n
     )
-    n = len(points)
-    points = _add_raster(points, elevation_path, "elevation", burned_indices)
-    print(
-        f"Size after join(elevation): {len(points):,}"
-        f" Loss/gain: {(len(points) - n):+,}"
-    )
-    n = len(points)
 
     # Convert to dask dataframe for saving in parallel
     nparts = max(int(np.round(n / TARGET_POINTS_PER_PARTITION)), 1)
