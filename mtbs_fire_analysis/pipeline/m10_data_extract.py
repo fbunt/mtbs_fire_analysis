@@ -325,13 +325,13 @@ def _build_dataframe_and_save(
         points, wui_prox_path, "wui_prox", burned_indices, n
     )
     points = _add_raster_with_stats(
-        points, elevation_path, "elevation", burned_indices, n
+        points, ELEVATION_PATH, "elevation", burned_indices, n
     )
     points = _add_raster_with_stats(
         points, SLOPE_PATH, "slope", burned_indices, n
     )
     points = _add_raster_with_stats(
-        points, ASPECT_PATH, "slope", burned_indices, n
+        points, ASPECT_PATH, "aspect", burned_indices, n
     )
 
     # Convert to dask dataframe for saving in parallel
@@ -361,7 +361,6 @@ def save_raster_to_points(years, crs, drop_extra_cols):
         perims = get_mtbs_perims_by_year_and_aoi(year, aoi_gs.values[0], crs)
         eco_regions = get_eco_regions_by_aoi(aoi_gs.values[0], crs)
         hex_grid = gpd.read_file(HEX_GRID_PATH)
-        elevation_path = ELEVATION_PATH
         print(f"---\nPreprocessing: {year}")
         start = time.time()
         with ProgressBar():
@@ -373,7 +372,6 @@ def save_raster_to_points(years, crs, drop_extra_cols):
                 wui_class_path,
                 wui_bool_path,
                 wui_prox_path,
-                elevation_path,
                 pts_path,
                 year,
                 perims,
