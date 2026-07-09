@@ -6,7 +6,8 @@ import dask.dataframe as dd
 import dask_geopandas as dgpd
 import numpy as np
 from dask.distributed import Client, LocalCluster
-from paths import INTERMEDIATE_WUI, ROOT_TMP_DIR
+
+from mtbs_fire_analysis.pipeline.paths import INTERMEDIATE_WUI, ROOT_TMP_DIR
 
 dask.config.set(
     {

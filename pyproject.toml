@@ -5,7 +5,7 @@ requires-python = "==3.12.*"
 
 dependencies = [
   "affine",
-  "dask",
+  "dask[distributed]",
   "dask-geopandas",
   "fiona",
   "geopandas",

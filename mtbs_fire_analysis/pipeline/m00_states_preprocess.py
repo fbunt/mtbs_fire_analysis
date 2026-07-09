@@ -1,7 +1,12 @@
 import geopandas as gpd
 import pandas as pd
 import raster_tools as rts
-from paths import RAW_RASTER_DATA_DIR, RAW_STATES_PATH, STATES_PATH
+
+from mtbs_fire_analysis.pipeline.paths import (
+    RAW_RASTER_DATA_DIR,
+    RAW_STATES_PATH,
+    STATES_PATH,
+)
 
 if __name__ == "__main__":
     states = gpd.read_file(RAW_STATES_PATH).sort_values("GEOID")

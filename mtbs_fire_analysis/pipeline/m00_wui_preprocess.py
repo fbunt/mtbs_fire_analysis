@@ -4,7 +4,8 @@ import numpy as np
 import pandas as pd
 import tqdm
 from dask.diagnostics import ProgressBar
-from paths import INTERMEDIATE_WUI, RAW_WUI
+
+from mtbs_fire_analysis.pipeline.paths import INTERMEDIATE_WUI, RAW_WUI
 
 # Water               : open water
 # Uninhabited_Veg     : housing density = 0 & wildland vegetation > 50%
