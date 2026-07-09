@@ -202,7 +202,6 @@ def _build_dataframe_and_save(
     wui_class_path,
     wui_bool_path,
     wui_prox_path,
-    elevation_path,
     out_path,
     year,
     perims,
