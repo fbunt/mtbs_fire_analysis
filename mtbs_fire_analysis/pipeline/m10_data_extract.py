@@ -17,6 +17,8 @@ from mtbs_fire_analysis.geohasher import GridGeohasher
 from mtbs_fire_analysis.pipeline.paths import (
     ECO_REGIONS_PATH,
     ELEVATION_PATH,
+    SLOPE_PATH,
+    ASPECT_PATH,
     HEX_GRID_PATH,
     NLCD_MODE_RASTER_PATH,
     PERIMS_PATH,
@@ -324,6 +326,12 @@ def _build_dataframe_and_save(
     )
     points = _add_raster_with_stats(
         points, elevation_path, "elevation", burned_indices, n
+    )
+    points = _add_raster_with_stats(
+        points, SLOPE_PATH, "slope", burned_indices, n
+    )
+    points = _add_raster_with_stats(
+        points, ASPECT_PATH, "slope", burned_indices, n
     )
 
     # Convert to dask dataframe for saving in parallel
