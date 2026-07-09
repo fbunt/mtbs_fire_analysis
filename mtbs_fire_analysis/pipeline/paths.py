@@ -51,7 +51,7 @@ ST_PATH = MTBS_ROOT / "st"
 
 # --- Formats ---
 MTBS_TIF_FMT = "mtbs_{aoi}_{year}.tif"
-NLCD_TIF_FMT = "Annual_NLCD_LndCov_{year}_CU_C1V0.tif"
+NLCD_TIF_FMT = "Annual_NLCD_LndCov_{year}_CU_C1V2.tif"
 TMP_PTS_FMT = "mtbs_{aoi}_{year}"
 COMBINED_OUT_FMT = "mtbs_{aoi}_{min_year}_{max_year}"
 PIXEL_COUNT_OUT_FMT = "eco_nlcd_mode_pixel_counts_eco{eco_level}.pqt"
