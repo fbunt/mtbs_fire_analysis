@@ -15,14 +15,14 @@ from dask.diagnostics import ProgressBar
 from mtbs_fire_analysis.defaults import DEFAULT_CRS
 from mtbs_fire_analysis.geohasher import GridGeohasher
 from mtbs_fire_analysis.pipeline.paths import (
+    ASPECT_PATH,
     ECO_REGIONS_PATH,
     ELEVATION_PATH,
-    SLOPE_PATH,
-    ASPECT_PATH,
     HEX_GRID_PATH,
     NLCD_MODE_RASTER_PATH,
     PERIMS_PATH,
     PERIMS_RASTERS_PATH,
+    SLOPE_PATH,
     STATES_PATH,
     get_mtbs_raster_path,
     get_nlcd_raster_path,
