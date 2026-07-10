@@ -295,7 +295,7 @@ def _build_dataframe_and_save(
         points.geohash.drop_duplicates().to_numpy()
     )
 
-    points = _add_raster_with_stats(
+    points, n = _add_raster_with_stats(
         points, mtbs_path, "bs", burned_indices, n, how="left"
     )
     points = points.astype({"bs": pd.ArrowDtype(pyarrow.int8())})
