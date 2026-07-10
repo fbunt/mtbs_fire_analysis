@@ -316,28 +316,28 @@ def _build_dataframe_and_save(
     points, n = _add_raster_with_stats(
         points, nlcd_post_path, "nlcd_post", burned_indices, n
     )
-    points = _add_raster_with_stats(
+    points, n = _add_raster_with_stats(
         points, NLCD_MODE_RASTER_PATH, "nlcd_mode", burned_indices
     )
-    points = _add_raster_with_stats(
+    points, n = _add_raster_with_stats(
         points, wui_flag_path, "wui_flag", burned_indices, n
     )
-    points = _add_raster_with_stats(
+    points, n = _add_raster_with_stats(
         points, wui_class_path, "wui_class", burned_indices, n
     )
-    points = _add_raster_with_stats(
+    points, n = _add_raster_with_stats(
         points, wui_bool_path, "wui_bool", burned_indices, n
     )
-    points = _add_raster_with_stats(
+    points, n = _add_raster_with_stats(
         points, wui_prox_path, "wui_prox", burned_indices, n
     )
-    points = _add_raster_with_stats(
+    points, n = _add_raster_with_stats(
         points, ELEVATION_PATH, "elevation", burned_indices, n
     )
-    points = _add_raster_with_stats(
+    points, n = _add_raster_with_stats(
         points, SLOPE_PATH, "slope", burned_indices, n
     )
-    points = _add_raster_with_stats(
+    points, n = _add_raster_with_stats(
         points, ASPECT_PATH, "aspect", burned_indices, n
     )
 
