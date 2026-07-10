@@ -1,4 +1,5 @@
 import argparse
+import shutil
 import time
 
 import dask.dataframe as dd
@@ -395,9 +396,23 @@ def save_raster_to_points(years, crs, drop_extra_cols):
         print(f"Total time for {year}: {_format_elapsed_time(d)}")
 
 
-def main(min_year, max_year, all_columns):
+def clear_points_cache(years):
+    for year in years:
+        pts_path = get_points_path(year, "CONUS")
+        if not pts_path.exists():
+            continue
+        print(f"Clearing cache: {pts_path}")
+        if pts_path.is_dir():
+            shutil.rmtree(pts_path)
+        else:
+            pts_path.unlink()
+
+
+def main(min_year, max_year, all_columns, clear_cache):
     years = list(range(min_year, max_year + 1))
     crs = DEFAULT_CRS
+    if clear_cache:
+        clear_points_cache(years)
     save_raster_to_points(years, crs, not all_columns)
 
 
@@ -429,10 +444,18 @@ def _get_parser():
         action="store_true",
         help="Keep all extra columns",
     )
+    p.add_argument(
+        "--clear-cache",
+        action="store_true",
+        help=(
+            "Delete the cached points output for each year in the given"
+            " range before processing"
+        ),
+    )
     return p
 
 
 if __name__ == "__main__":
     args = _get_parser().parse_args()
     assert args.min_year <= args.max_year
-    main(args.min_year, args.max_year, args.all_columns)
+    main(args.min_year, args.max_year, args.all_columns, args.clear_cache)
