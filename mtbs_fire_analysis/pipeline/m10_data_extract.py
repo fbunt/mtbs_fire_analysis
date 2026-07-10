@@ -317,7 +317,7 @@ def _build_dataframe_and_save(
         points, nlcd_post_path, "nlcd_post", burned_indices, n
     )
     points, n = _add_raster_with_stats(
-        points, NLCD_MODE_RASTER_PATH, "nlcd_mode", burned_indices
+        points, NLCD_MODE_RASTER_PATH, "nlcd_mode", burned_indices, n
     )
     points, n = _add_raster_with_stats(
         points, wui_flag_path, "wui_flag", burned_indices, n
