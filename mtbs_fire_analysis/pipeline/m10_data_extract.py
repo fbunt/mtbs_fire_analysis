@@ -43,7 +43,9 @@ def get_conus_geom(crs):
 
 def get_states(crs):
     states = gpd.read_file(STATES_PATH).to_crs(crs)
-    return states[["STUSPS", "geometry"]].rename({"STUSPS": "state"}, axis=1)
+    states = states[["STUSPS", "geometry"]].rename({"STUSPS": "state"}, axis=1)
+    # Filter out the western US and CONUS polygons
+    return states[~states.state.isin(["WUS", "CONUS"])]
 
 
 def get_mtbs_perims_raster_path(year):
