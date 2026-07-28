@@ -3,6 +3,7 @@ import subprocess
 
 import geopandas as gpd
 import raster_tools as rts
+import rasterio as rio
 from dask.distributed import Client, LocalCluster
 
 from mtbs_fire_analysis.defaults import DEFAULT_GEOHASH_GEOBOX
@@ -63,6 +64,19 @@ def run_gdaldem(mode, in_path, out_path):
         raise err
 
 
+def set_band_name(path, name):
+    """Name the band the way the raw EDNA rasters did.
+
+    The names get dropped somewhere on the way through reproject/clip
+    and gdaldem does not set one at all. rioxarray round-trips the band
+    description through `long_name`, so set both to match the DEM. This
+    only rewrites metadata, not pixels.
+    """
+    with rio.open(path, "r+") as ds:
+        ds.set_band_description(1, name)
+        ds.update_tags(long_name=name)
+
+
 def process_elevation():
     raster_raw = rts.Raster(ELEVATION_RAW_PATH).set_null_value(NULL_VALUE)
     states = gpd.read_file(STATES_PATH)
@@ -81,6 +95,7 @@ def process_elevation():
 
 def process_slope():
     run_gdaldem("slope", ELEVATION_PATH, SLOPE_PATH)
+    set_band_name(SLOPE_PATH, "slopedeg")
 
 
 def process_aspect():
@@ -105,6 +120,7 @@ def process_aspect():
     protected_raster_save_with_cleanup(
         aspect, ASPECT_PATH, progress=False, BIGTIFF="YES"
     )
+    set_band_name(ASPECT_PATH, "aspect")
     ASPECT_GDALDEM_PATH.unlink()
 
 
