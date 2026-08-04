@@ -29,7 +29,23 @@ Back-compat: purely additive -- a new module, new sidecar files, and asserts
 that no-op on absent stamps. With ``FIRE_DIVISIBLE_GRID`` default-OFF the
 sidecar records the legacy grid and nothing about existing data changes.
 
-See ``docs/plans/SUBSTRATE_OVERHAUL_PHASE3_EXECUTION.md`` §1, §2b.
+**Schema v2 (2026-08-04) adds the CRS term.** Shape and affine are datum-blind,
+and the planned WGS84 re-anchor moves only the datum -- so a v1 stamp cannot
+tell a NAD83 table from a WGS84 one, and a cross-datum geohash join would pass
+this guard silently. ``grid_id`` therefore now hashes a declared ``crs_id``
+alongside the geometry, which means every stamp written before this change
+stores an id a v2 process recomputes differently.
+
+Rather than make that a flag day, the guard **negotiates dialects**: a v1 stamp
+is compared on the projection it does guarantee (shape + affine), which is
+exactly the comparison this guard made before the term existed. Nothing is
+weakened relative to a v1 stamp's own guarantee. What it cannot do is separate
+two datums, so the mixed case WARNs -- this is a migration window, not a steady
+state. ``geohash_table_check(..., require_crs_aware=True)`` is the mechanical
+gate: the datum re-anchor must not begin while any v1 stamp survives.
+
+See ``docs/plans/SUBSTRATE_OVERHAUL_PHASE3_EXECUTION.md`` §1, §2b and
+phd-research ``docs/plans/G3_CRS_AWARE_GRID_IDENTITY.md`` §5.
 """
 
 from __future__ import annotations
@@ -38,10 +54,20 @@ import json
 import warnings
 from pathlib import Path
 
-from mtbs_fire_analysis.defaults import grid_for_pixel_m
+from affine import Affine
+
+from mtbs_fire_analysis.defaults import grid_for_pixel_m, grid_id_from
 from mtbs_fire_analysis.geohasher import GridGeohasher
 
-SCHEMA = "grid_identity/v1"
+#: The pre-2026-08 dialect: ``grid_shape`` + ``affine``, and therefore
+#: **datum-blind**. Still readable, and still the only projection on which a
+#: v1 stamp and a v2 stamp can be compared.
+SCHEMA_V1 = "grid_identity/v1"
+#: Adds the declared CRS term (``crs_id``), so a datum-only re-anchor produces
+#: a different ``grid_id`` instead of an identical one.
+SCHEMA_V2 = "grid_identity/v2"
+#: What new stamps are written as.
+SCHEMA = SCHEMA_V2
 #: Sidecar filename inside a partitioned-parquet output directory.
 SIDECAR_DIR_NAME = "_grid_identity.json"
 #: Sidecar suffix beside a single-file parquet output.
@@ -185,11 +211,41 @@ def read_grid_sidecar(path):
     return None
 
 
+def is_crs_aware(payload) -> bool:
+    """Whether ``payload`` carries the CRS term (i.e. is a v2 stamp).
+
+    Keyed on the ``crs_id`` field rather than the ``schema`` string, because
+    the field is what actually determines comparability -- and because
+    ``schema`` was written-but-never-read before 2026-08, so an old file's
+    string is not evidence of anything.
+    """
+    return payload is not None and "crs_id" in payload
+
+
+def crs_blind_id(payload):
+    """``payload``'s id computed WITHOUT the CRS term, or ``None``.
+
+    For a v1 stamp this is just its stored ``grid_id``. For a v2 stamp it is
+    recomputed from the shape and affine the stamp carries -- which is why
+    both dialects remain comparable without re-stamping anything.
+    """
+    if payload is None:
+        return None
+    if not is_crs_aware(payload):
+        return payload.get("grid_id")
+    shape, affine = payload.get("grid_shape"), payload.get("affine")
+    if shape is None or affine is None:
+        return None
+    return grid_id_from(shape, Affine(*affine[:6]))
+
+
 def _fmt(payload) -> str:
     if payload is None:
         return "None"
+    crs = payload.get("crs_id", "<datum-blind v1>")
     return (
-        f"grid_id={payload.get('grid_id')} shape={payload.get('grid_shape')}"
+        f"grid_id={payload.get('grid_id')} shape={payload.get('grid_shape')} "
+        f"crs={crs}"
     )
 
 
@@ -218,6 +274,40 @@ def assert_grids_match(
             stacklevel=2,
         )
         return
+    # Dialect skew: one side predates the CRS term. Compare on the projection
+    # they share -- shape + affine -- which is exactly the comparison this
+    # guard made before the term existed, so nothing is weakened relative to
+    # the v1 stamp's own guarantee. What it CANNOT do is separate two datums,
+    # so it warns: this is the migration window, not a steady state, and F4b
+    # must not begin until no v1 stamps remain (G3 §5).
+    if is_crs_aware(left) != is_crs_aware(right):
+        lid, rid = crs_blind_id(left), crs_blind_id(right)
+        legacy = left_label if not is_crs_aware(left) else right_label
+        if lid is None or rid is None:
+            warnings.warn(
+                f"geohash join {left_label} ⋈ {right_label}{ctx}: a stamp is "
+                "malformed (no shape/affine to compare on); proceeding "
+                "unverified. Re-stamp by re-running the writer.",
+                stacklevel=2,
+            )
+            return
+        if lid != rid:
+            raise GridIdentityMismatchError(
+                f"geohash join {left_label} ⋈ {right_label}{ctx}: DIFFERENT "
+                f"grids -- {left_label} {_fmt(left)} vs {right_label} "
+                f"{_fmt(right)}. A geohash join across grids mis-matches "
+                "SILENTLY (wrong/empty rows). Regenerate both on the same "
+                "grid (substrate-overhaul §1)."
+            )
+        warnings.warn(
+            f"geohash join {left_label} ⋈ {right_label}{ctx}: [{legacy}] "
+            f"carries a {SCHEMA_V1} stamp with no CRS term, so the grids were "
+            "verified on shape+affine only -- a cross-DATUM join would not be "
+            f"caught. Re-stamp it to {SCHEMA_V2} to enable that check.",
+            stacklevel=2,
+        )
+        return
+
     if left["grid_id"] != right["grid_id"]:
         raise GridIdentityMismatchError(
             f"geohash join {left_label} ⋈ {right_label}{ctx}: DIFFERENT "

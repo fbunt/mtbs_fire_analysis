@@ -73,7 +73,7 @@ def base_grid_shape(padding_enabled=None):
     )
 
 
-def grid_descriptor(grid_shape, affine):
+def grid_descriptor(grid_shape, affine, crs_id=None):
     """Canonical, JSON-serializable identity of a geohash grid.
 
     The geohash LINEAR index (``geohasher.py``:
@@ -84,19 +84,43 @@ def grid_descriptor(grid_shape, affine):
     so the padded grid has a DIFFERENT descriptor than the legacy grid
     (substrate-overhaul Phase 3, §1: the pad is additive for the spatial index
     ``[i,j]`` but NOT for the geohash linear index).
+
+    ``crs_id`` adds the CRS term. Shape and affine are **datum-blind**: the
+    planned WGS84 re-anchor preserves projection, extent and origin and moves
+    only the datum, so without this term the NAD83 and WGS84 grids produce an
+    identical descriptor and a cross-datum geohash join passes the guard
+    silently. Omitting it (``None``) reproduces the pre-2026-08 descriptor
+    byte-for-byte, which is what makes an unstamped legacy artifact still
+    comparable -- see ``grid_identity.SCHEMA_V1``.
+
+    It is a **declared name** (``"conus_albers_nad83"``), never a CRS
+    serialization: a WKT/PROJ string is produced by pyproj/GDAL, so hashing one
+    would put a library version into the preimage and a routine dependency
+    bump would move every stamped identity with no datum change
+    (``D-2026-08-03-crs-identity-term-is-declared``). ``DEFAULT_CRS_ID`` names
+    this module's ``DEFAULT_CRS``; phd-research's ``test_grid_config`` is what
+    stops the name and the CRS it denotes drifting apart.
     """
     h, w = grid_shape
-    return {
+    desc = {
         "grid_shape": [int(h), int(w)],
         "affine": [float(c) for c in tuple(affine)[:6]],
     }
+    if crs_id is not None:
+        desc["crs_id"] = str(crs_id)
+    return desc
 
 
-def grid_id_from(grid_shape, affine):
+def grid_id_from(grid_shape, affine, crs_id=None):
     """Short stable hash of ``grid_descriptor`` -- the geohash compatibility
-    key stamped on geohash-keyed outputs and compared at join sites."""
+    key stamped on geohash-keyed outputs and compared at join sites.
+
+    With ``crs_id=None`` this returns the historical CRS-blind id, which is
+    what a ``grid_identity/v1`` sidecar stores; pass the ``crs_id`` to get the
+    datum-aware id a ``v2`` sidecar stores.
+    """
     blob = json.dumps(
-        grid_descriptor(grid_shape, affine),
+        grid_descriptor(grid_shape, affine, crs_id),
         sort_keys=True,
         separators=(",", ":"),
     )
@@ -245,6 +269,23 @@ PROJCRS["USA_Contiguous_Albers_Equal_Area_Conic_USGS_version",
                 ID["EPSG",9001]]]]
 """
 )
+#: The DECLARED name of ``DEFAULT_CRS`` -- the CRS term in a geohash grid
+#: identity (``grid_descriptor``). A name, never a serialization: hashing a
+#: WKT would put the pyproj/GDAL version into the preimage, so a routine
+#: dependency bump would move every stamped identity with no datum change
+#: (``D-2026-08-03-crs-identity-term-is-declared``).
+#:
+#: Bump this on ANY change to ``DEFAULT_CRS``; the old value then stays
+#: permanently attached to artifacts built under the old CRS. Forgetting to
+#: bump it is caught by ``test_default_crs_id_denotes_default_crs``, which
+#: requires the name to denote a CRS semantically equal to ``DEFAULT_CRS``.
+#:
+#: Must equal ``fire_interval.grid_config.CRS_ID`` -- the consuming project
+#: declares the same grid, and the two names diverging would split one grid
+#: into two identities. Pinned cross-repo by phd-research's
+#: ``test_grid_config``.
+DEFAULT_CRS_ID = "conus_albers_nad83"
+
 DEFAULT_GEOHASH_GEOBOX = GeoBox(
     DEFAULT_GEOHASH_GRID_SHAPE, DEFAULT_GEOHASH_AFFINE, DEFAULT_CRS
 )

@@ -9,6 +9,7 @@ from affine import Affine
 
 from mtbs_fire_analysis.defaults import (
     DEFAULT_CRS,
+    DEFAULT_CRS_ID,
     DEFAULT_GEOHASH_AFFINE,
     DEFAULT_GEOHASH_GRID_SHAPE,
     grid_descriptor,
@@ -22,6 +23,7 @@ class GridGeohasher:
         grid_affine=DEFAULT_GEOHASH_AFFINE,
         grid_shape=DEFAULT_GEOHASH_GRID_SHAPE,
         crs=DEFAULT_CRS,
+        crs_id=DEFAULT_CRS_ID,
     ):
         assert isinstance(grid_affine, Affine)
         assert isinstance(grid_shape, (tuple, list))
@@ -30,21 +32,40 @@ class GridGeohasher:
         self.xres_half = grid_affine.a / 2
         self.yres_half = grid_affine.e / 2
         self.grid_shape = grid_shape
+        #: The CRS this geohasher's coordinates are in. Used for the
+        #: reverse-geohash transform; NOT what enters the identity.
         self.crs = crs
+        #: The DECLARED name of ``crs``, and the term that DOES enter the
+        #: identity. Anyone passing a non-default ``crs`` must pass the
+        #: matching ``crs_id`` -- leaving it at the default would stamp a
+        #: NAD83 name onto a differently-datumed grid, which is worse than
+        #: the CRS-blind identity this replaced (an identity that is
+        #: confidently wrong rather than merely incomplete).
+        self.crs_id = crs_id
 
     @property
     def grid_descriptor(self):
         """Canonical identity of the grid this geohasher hashes with
-        (``mtbs_fire_analysis.defaults.grid_descriptor``)."""
-        return grid_descriptor(self.grid_shape, self.affine)
+        (``mtbs_fire_analysis.defaults.grid_descriptor``), CRS term
+        included."""
+        return grid_descriptor(self.grid_shape, self.affine, self.crs_id)
 
     @property
     def grid_id(self):
         """Short stable hash of this geohasher's grid -- the geohash
         compatibility key (``defaults.grid_id_from``). Stamped on
         geohash-keyed outputs; compared at join sites to catch a
-        cross-grid (e.g. padded-vs-legacy) join before it silently
-        mis-matches. See ``mtbs_fire_analysis.grid_identity``."""
+        cross-grid (e.g. padded-vs-legacy, or cross-datum) join before it
+        silently mis-matches. See ``mtbs_fire_analysis.grid_identity``."""
+        return grid_id_from(self.grid_shape, self.affine, self.crs_id)
+
+    @property
+    def crs_blind_grid_id(self):
+        """This grid's id computed WITHOUT the CRS term.
+
+        The ``grid_identity/v1`` dialect: what a pre-2026-08 sidecar stores,
+        and the only projection on which a v1 stamp and a v2 stamp are
+        comparable. See ``grid_identity.assert_grids_match``."""
         return grid_id_from(self.grid_shape, self.affine)
 
     def geohash(self, geometry):
@@ -125,7 +146,6 @@ class GridGeohasher:
         if index is None:
             return lon, lat
         return gpd.GeoSeries.from_xy(lon, lat, index=index, crs="EPSG:4326")
-
 
 
 def _add_geom(df, hasher):
