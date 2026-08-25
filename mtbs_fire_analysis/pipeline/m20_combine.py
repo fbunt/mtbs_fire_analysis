@@ -55,9 +55,11 @@ def main(files, out_path, num_workers):
     # m10 is skip-if-exists with no --overwrite, so a pre-flip frame can
     # survive a grid re-encode; each per-year frame is grid-stamped by m10, so
     # any input whose grid differs from the active process grid is a mixed-grid
-    # combine and must abort. Track whether EVERY input carried a stamp: an
-    # unstamped input (legacy / pre-stamp data) WARNs and proceeds, but must
-    # NOT let us forge a same-grid stamp on the output below.
+    # combine and must abort. An UNSTAMPED input is refused the same way by
+    # default (its grid cannot be verified at all); under
+    # FIRE_GRID_ALLOW_UNSTAMPED=1 it warns and proceeds instead. Either way,
+    # track whether EVERY input carried a stamp: an unverified input must NOT
+    # let us forge a same-grid stamp on the output below.
     all_inputs_stamped = True
     for f in files:
         payload = read_grid_sidecar(f)
@@ -89,8 +91,9 @@ def main(files, out_path, num_workers):
     #    forged claim reading as valid on freshly-combined data.
     #  - Stamp ONLY when EVERY input was present-and-matching. If any input was
     #    unstamped we cannot attest the combined grid; leave the output
-    #    unstamped so a00 keeps WARNing (the honest lenient-on-absence signal)
-    #    rather than trusting an active-grid stamp we cannot back up.
+    #    unstamped so a00's guard refuses it (or warns, under
+    #    FIRE_GRID_ALLOW_UNSTAMPED=1) rather than trusting an active-grid stamp
+    #    we cannot back up.
     beside_sidecar = Path(f"{out_path}{SIDECAR_FILE_SUFFIX}")
     beside_sidecar.unlink(missing_ok=True)
     if all_inputs_stamped:

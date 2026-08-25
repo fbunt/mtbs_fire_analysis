@@ -16,18 +16,25 @@ This module:
 * provides a fail-loud guard for the (exactly two) cross-grid join sites
   (``assert_grids_match`` / ``assert_matches_active``).
 
-Semantics (substrate-overhaul Phase-3 §2b, signed off §7 Q-geohash):
+Semantics (substrate-overhaul Phase-3 §2b, signed off §7 Q-geohash;
+require-present tightening 2026-08-25, phd-research register row
+``D-2026-06-24-geohash-grid-version-guard``):
 
 * **Strict on mismatch** -- two present-and-different grid identities raise
   ``GridIdentityMismatchError``.
-* **Lenient on absence** -- a missing sidecar (legacy / pre-stamp data, or an
-  upstream/Fred dataset) WARNs and proceeds; strict-on-absent would break
-  every existing run + every upstream user. Tightened to require-present at
-  the Phase-3 exit gate.
+* **Strict on absence** -- a missing sidecar, or one too malformed to compare
+  on, raises ``GridIdentityMissingError``. An unverifiable join is exactly the
+  silent mis-match this guard exists to stop, so it is not a benign case.
+* **Named escape hatch** -- ``FIRE_GRID_ALLOW_UNSTAMPED=1`` restores the
+  warn-and-proceed behaviour for a deliberate legacy / upstream read. It never
+  relaxes a present-but-mismatched pair, and never changes the v1/v2 dialect
+  comparison below.
 
-Back-compat: purely additive -- a new module, new sidecar files, and asserts
-that no-op on absent stamps. With ``FIRE_DIVISIBLE_GRID`` default-OFF the
-sidecar records the legacy grid and nothing about existing data changes.
+Back-compat: reading legacy / pre-stamp / upstream data now requires either
+re-running the stamping writers (m10/m10b/m11) or setting
+``FIRE_GRID_ALLOW_UNSTAMPED=1`` deliberately. With ``FIRE_DIVISIBLE_GRID``
+default-OFF the sidecar records the legacy grid and nothing about the grid
+itself changes.
 
 **Schema v2 (2026-08-04) adds the CRS term.** Shape and affine are datum-blind,
 and the planned WGS84 re-anchor moves only the datum -- so a v1 stamp cannot
@@ -51,6 +58,7 @@ phd-research ``docs/plans/G3_CRS_AWARE_GRID_IDENTITY.md`` §5.
 from __future__ import annotations
 
 import json
+import os
 import warnings
 from pathlib import Path
 
@@ -72,6 +80,20 @@ SCHEMA = SCHEMA_V2
 SIDECAR_DIR_NAME = "_grid_identity.json"
 #: Sidecar suffix beside a single-file parquet output.
 SIDECAR_FILE_SUFFIX = ".grid.json"
+#: Set to ``"1"`` to allow a join whose grids cannot be verified (an absent or
+#: malformed stamp) -- a deliberate legacy / upstream read. Never relaxes a
+#: present-but-mismatched pair.
+ALLOW_UNSTAMPED_ENV = "FIRE_GRID_ALLOW_UNSTAMPED"
+
+
+def _unstamped_reads_allowed() -> bool:
+    """Whether the escape hatch is set RIGHT NOW.
+
+    Read at call time, never captured at import: a caller that sets the var
+    around one deliberate legacy read (and a test that monkeypatches it) must
+    still take effect on an already-imported module.
+    """
+    return os.environ.get(ALLOW_UNSTAMPED_ENV) == "1"
 
 
 class GridIdentityMismatchError(RuntimeError):
@@ -79,6 +101,17 @@ class GridIdentityMismatchError(RuntimeError):
 
     Joining them on ``geohash`` would mis-match silently; regenerate both on
     the same grid (substrate-overhaul §1).
+    """
+
+
+class GridIdentityMissingError(GridIdentityMismatchError):
+    """A geohash join partner has no readable grid-identity sidecar.
+
+    Raised when a side is unstamped (or carries a stamp too malformed to
+    compare on) and unstamped reads were not explicitly allowed via
+    ``FIRE_GRID_ALLOW_UNSTAMPED=1``. Subclasses the mismatch error, so any
+    caller that catches "these grids are not verified compatible" catches
+    both the different-grids and the cannot-tell cases.
     """
 
 
@@ -156,8 +189,9 @@ def write_grid_sidecar(
     Returns:
         The sidecar path written, or ``None`` if the stamp write failed
         (best-effort: a stamp failure WARNs and is swallowed, never aborts an
-        otherwise-successful pipeline run -- the stamp is advisory and the
-        join guard is already lenient on an absent sidecar).
+        otherwise-successful pipeline run -- the parquet is the expensive
+        artifact, and the unstamped output it leaves behind is caught loudly
+        at the next join rather than silently trusted).
     """
     payload = {
         "schema": SCHEMA,
@@ -173,9 +207,9 @@ def write_grid_sidecar(
     except OSError as exc:
         warnings.warn(
             f"grid-identity stamp write failed for {out_path}: {exc}. The "
-            "parquet is intact; the downstream join guard will WARN (treat "
-            "as unstamped) rather than verify same-grid. Re-stamp by "
-            "re-running the writer (substrate-overhaul §2b).",
+            "parquet is intact but reads as UNSTAMPED, so the downstream "
+            f"join guard will REFUSE it unless {ALLOW_UNSTAMPED_ENV}=1. "
+            "Re-stamp by re-running the writer (substrate-overhaul §2b).",
             stacklevel=2,
         )
         return None
@@ -186,7 +220,8 @@ def read_grid_sidecar(path):
     """Return the stored grid-identity payload, or ``None`` if unstamped.
 
     ``None`` (legacy / pre-stamp / upstream data, or an unreadable sidecar)
-    is the back-compat signal: the guards WARN-and-proceed rather than fail.
+    means the guards cannot verify the grid, so they REFUSE the join unless
+    ``FIRE_GRID_ALLOW_UNSTAMPED=1`` is set for a deliberate legacy read.
     Accepts the same ``path`` shape used to write (directory or single file).
     """
     path = Path(path)
@@ -203,8 +238,9 @@ def read_grid_sidecar(path):
                 # warn loudly so it is not silently degraded to "unstamped".
                 warnings.warn(
                     f"grid-identity sidecar {cand} exists but is unreadable "
-                    f"({exc}); treating as absent (guard will WARN, not "
-                    "verify). Re-stamp by re-running the writer.",
+                    f"({exc}); treating as absent, so the join guard will "
+                    f"REFUSE unless {ALLOW_UNSTAMPED_ENV}=1. Re-stamp by "
+                    "re-running the writer.",
                     stacklevel=2,
                 )
                 return None
@@ -217,9 +253,12 @@ def is_crs_aware(payload) -> bool:
     Keyed on the ``crs_id`` field rather than the ``schema`` string, because
     the field is what actually determines comparability -- and because
     ``schema`` was written-but-never-read before 2026-08, so an old file's
-    string is not evidence of anything.
+    string is not evidence of anything. A payload that is not a dict at all
+    (a JSON list/str/int on disk) is not a stamp in either dialect, so it
+    reads as ``False`` here and falls into the malformed branch of
+    ``assert_grids_match`` instead of raising ``TypeError`` from the ``in``.
     """
-    return payload is not None and "crs_id" in payload
+    return isinstance(payload, dict) and "crs_id" in payload
 
 
 def crs_blind_id(payload):
@@ -227,9 +266,10 @@ def crs_blind_id(payload):
 
     For a v1 stamp this is just its stored ``grid_id``. For a v2 stamp it is
     recomputed from the shape and affine the stamp carries -- which is why
-    both dialects remain comparable without re-stamping anything.
+    both dialects remain comparable without re-stamping anything. Anything
+    that is not a stamp dict yields ``None`` (i.e. "malformed").
     """
-    if payload is None:
+    if not isinstance(payload, dict):
         return None
     if not is_crs_aware(payload):
         return payload.get("grid_id")
@@ -237,6 +277,19 @@ def crs_blind_id(payload):
     if shape is None or affine is None:
         return None
     return grid_id_from(shape, Affine(*affine[:6]))
+
+
+def _stored_grid_id(payload):
+    """``payload``'s stored ``grid_id``, or ``None`` if it carries none.
+
+    The same-dialect counterpart of ``crs_blind_id``: both sides are the same
+    dialect, so their stored ids are directly comparable -- but only if they
+    exist. A missing key (or a payload that is not a stamp dict) is malformed,
+    never a value to compare on.
+    """
+    if not isinstance(payload, dict):
+        return None
+    return payload.get("grid_id")
 
 
 def _fmt(payload) -> str:
@@ -252,12 +305,16 @@ def _fmt(payload) -> str:
 def assert_grids_match(
     left, right, *, left_label, right_label, context=""
 ) -> None:
-    """Fail loud iff two PRESENT grid identities differ.
+    """Fail loud unless two grid identities are verified compatible.
 
     ``left`` / ``right`` are ``read_grid_sidecar`` payloads (or ``None``).
-    A ``None`` side (absent sidecar) WARNs and returns -- never raises
-    (lenient on absence). Two present-but-different ``grid_id`` raise
-    ``GridIdentityMismatchError`` (strict on mismatch, §7 Q-geohash).
+    Two present-but-different ``grid_id`` raise ``GridIdentityMismatchError``
+    (strict on mismatch, §7 Q-geohash). A ``None`` side (absent sidecar)
+    raises ``GridIdentityMissingError`` -- the join cannot be verified at all
+    -- unless ``FIRE_GRID_ALLOW_UNSTAMPED=1``, which downgrades that case
+    (only) to the pre-tightening WARN-and-proceed. A present-but-uncomparable
+    stamp (no ``grid_id``, or no shape+affine to compare a v1 against a v2 on)
+    takes that same strict path: it looks like provenance while carrying none.
     """
     ctx = f" ({context})" if context else ""
     if left is None or right is None:
@@ -266,11 +323,23 @@ def assert_grids_match(
             for lbl, p in ((left_label, left), (right_label, right))
             if p is None
         )
+        if not _unstamped_reads_allowed():
+            raise GridIdentityMissingError(
+                f"geohash join {left_label} ⋈ {right_label}{ctx}: no "
+                f"grid-identity sidecar on [{missing}] -- cannot verify "
+                "same-grid. A geohash is only meaningful within its own grid, "
+                "so an unverifiable join mis-matches SILENTLY (wrong/empty "
+                "rows, no error). Re-run the stamping writers (m10/m10b/m11, "
+                "substrate-overhaul §2b) to stamp the data, or set "
+                f"{ALLOW_UNSTAMPED_ENV}=1 for a deliberate legacy/upstream "
+                "read."
+            )
         warnings.warn(
             f"geohash join {left_label} ⋈ {right_label}{ctx}: no "
             f"grid-identity sidecar on [{missing}] -- cannot verify same-grid "
             "(legacy / unstamped data); proceeding. Regenerate with the "
-            "stamping writers to enable the guard (substrate-overhaul §2b).",
+            "stamping writers to enable the guard (substrate-overhaul §2b). "
+            f"Proceeding only because {ALLOW_UNSTAMPED_ENV}=1.",
             stacklevel=2,
         )
         return
@@ -284,10 +353,25 @@ def assert_grids_match(
         lid, rid = crs_blind_id(left), crs_blind_id(right)
         legacy = left_label if not is_crs_aware(left) else right_label
         if lid is None or rid is None:
+            # A present-but-malformed stamp is worse than an absent one: it
+            # looks like provenance while carrying none. Same strictness, same
+            # escape hatch.
+            if not _unstamped_reads_allowed():
+                raise GridIdentityMissingError(
+                    f"geohash join {left_label} ⋈ {right_label}{ctx}: a stamp "
+                    "is malformed (no shape/affine to compare on) -- cannot "
+                    "verify same-grid. A geohash is only meaningful within "
+                    "its own grid, so an unverifiable join mis-matches "
+                    "SILENTLY (wrong/empty rows, no error). Re-run the "
+                    "stamping writers (m10/m10b/m11, substrate-overhaul §2b) "
+                    f"to re-stamp the data, or set {ALLOW_UNSTAMPED_ENV}=1 "
+                    "for a deliberate legacy/upstream read."
+                )
             warnings.warn(
                 f"geohash join {left_label} ⋈ {right_label}{ctx}: a stamp is "
                 "malformed (no shape/affine to compare on); proceeding "
-                "unverified. Re-stamp by re-running the writer.",
+                "unverified. Re-stamp by re-running the writer. Proceeding "
+                f"only because {ALLOW_UNSTAMPED_ENV}=1.",
                 stacklevel=2,
             )
             return
@@ -308,7 +392,39 @@ def assert_grids_match(
         )
         return
 
-    if left["grid_id"] != right["grid_id"]:
+    lid, rid = _stored_grid_id(left), _stored_grid_id(right)
+    if lid is None or rid is None:
+        # Same-dialect twin of the malformed branch above. Without it a
+        # payload with no ``grid_id`` raised a bare KeyError out of the join
+        # site, and TWO of them compared equal (None == None) and passed
+        # SILENTLY -- the one fail-open left in the module. Same strictness,
+        # same escape hatch.
+        bad = ", ".join(
+            lbl
+            for lbl, gid in ((left_label, lid), (right_label, rid))
+            if gid is None
+        )
+        if not _unstamped_reads_allowed():
+            raise GridIdentityMissingError(
+                f"geohash join {left_label} ⋈ {right_label}{ctx}: a stamp is "
+                f"malformed (no grid_id to compare on) on [{bad}] -- cannot "
+                "verify same-grid. A geohash is only meaningful within its "
+                "own grid, so an unverifiable join mis-matches SILENTLY "
+                "(wrong/empty rows, no error). Re-run the stamping writers "
+                "(m10/m10b/m11, substrate-overhaul §2b) to re-stamp the "
+                f"data, or set {ALLOW_UNSTAMPED_ENV}=1 for a deliberate "
+                "legacy/upstream read."
+            )
+        warnings.warn(
+            f"geohash join {left_label} ⋈ {right_label}{ctx}: a stamp is "
+            f"malformed (no grid_id to compare on) on [{bad}]; proceeding "
+            "unverified. Re-stamp by re-running the writer. Proceeding only "
+            f"because {ALLOW_UNSTAMPED_ENV}=1.",
+            stacklevel=2,
+        )
+        return
+
+    if lid != rid:
         raise GridIdentityMismatchError(
             f"geohash join {left_label} ⋈ {right_label}{ctx}: DIFFERENT "
             f"grids -- {left_label} {_fmt(left)} vs {right_label} "
