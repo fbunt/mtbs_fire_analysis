@@ -185,7 +185,7 @@ def _get_wui_raster(wui_path, mtbs_path):
 def _add_raster_with_stats(
     points, data_path, name, burned_indices, n, how=None
 ):
-    points = _add_raster(points, data_path, name, burned_indices, how=None)
+    points = _add_raster(points, data_path, name, burned_indices, how=how)
     print(
         f"Size after join({name}): {len(points):,}"
         f" Loss/gain: {(len(points) - n):+,}"
