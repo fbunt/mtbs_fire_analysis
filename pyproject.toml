@@ -26,6 +26,7 @@ dependencies = [
   "tqdm",
   "xarray",
   "raster-tools>=0.9.8",
+  "python-dotenv>=1.2.3",
 ]
 
 [build-system]
