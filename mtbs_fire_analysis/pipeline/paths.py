@@ -4,8 +4,9 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # Load FIRE_DATA_ROOT (and any other overrides) from a .env at the repo root,
-# if present. On the server there is no .env and this is a no-op, so the
-# default below is used.
+# if present. Precedence: a shell env var wins over .env, which wins over the
+# server default below (override=False, the dotenv default). On the
+# server there is no .env, so this is a no-op and the default is used.
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 MAIN_FOLDER_ALIAS = Path(

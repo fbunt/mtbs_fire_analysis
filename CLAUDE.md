@@ -66,10 +66,12 @@ plots `dt` distributions by eco-region and burn severity.
   geohashes, and join.
 - **One canonical CRS/grid.** Everything is reprojected to `DEFAULT_CRS` /
   `DEFAULT_GEOHASH_GEOBOX` before joining. Don't introduce a second grid or CRS.
-- **`pipeline/paths.py` is the single source of truth for all filesystem locations**, all
-  under `/var/mnt/fastdata02` (with a temp dir on `/var/mnt/fastdata01`). Paths are absolute
-  and machine-specific. Add new inputs/outputs here (constants + `get_*` builder functions)
-  rather than hardcoding paths in stage scripts.
+- **`pipeline/paths.py` is the single source of truth for all filesystem locations.** Every
+  path derives from one root, `FIRE_DATA_ROOT`, read from a repo-root `.env` (see
+  `.env.example`) and falling back to the server default when unset; precedence is shell
+  env > `.env` > default. The root is expected to contain `<root>/data` (inputs and results)
+  and `<root>/data_tmp` (per-year intermediates). Add new inputs/outputs here (constants +
+  `get_*` builder functions) rather than hardcoding paths in stage scripts.
 - **Dask memory is treated as hostile.** Existing code sets `MALLOC_TRIM_THRESHOLD_`, wraps
   raster loads in throwaway fetcher functions so graphs get GC'd, and prefers polars for the
   big joins. Preserve these patterns; don't hold dask graph references in scope after compute.
