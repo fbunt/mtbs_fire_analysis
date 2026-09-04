@@ -28,7 +28,7 @@ uv run ruff format .
 bash mtbs_fire_analysis/pipeline/m01_rasterize_perims.sh
 ```
 
-There are **no tests** and no CI. Verify changes by running the relevant stage on a small year range.
+Run the tests with `uv run pytest tests` (the catalog integration suite self-skips unless `JLAB_ROOT` points at a store with an index). There is no CI; also verify pipeline changes by running the relevant stage on a small year range.
 
 ## Pipeline stages (run in numeric order)
 
@@ -72,6 +72,15 @@ plots `dt` distributions by eco-region and burn severity.
   env > `.env` > default. The root is expected to contain `<root>/data` (inputs and results)
   and `<root>/data_tmp` (per-year intermediates). Add new inputs/outputs here (constants +
   `get_*` builder functions) rather than hardcoding paths in stage scripts.
+- **Catalog adapter (`pipeline/catalog_paths.py`).** When the catalog is enabled, `paths.py`
+  rebinds exactly the 12 catalog-backed inputs (the 9 raster/vector input constants plus
+  `get_mtbs_raster_path` / `get_nlcd_raster_path` / `get_wui_flavor_path`) to the jlab client,
+  which resolves them from the platform store by `find()`/`localize()` and returns local paths;
+  NLCD/WUI temporal substitutions happen inside the client via the loaded profile, not here.
+  The remaining scratch/results/cache surface, including `get_points_path`, stays on the
+  `FIRE_DATA_ROOT` layout. The adapter is enabled by `FIRE_CATALOG` (1/true/on vs 0/false/off);
+  when unset it is on iff `JLAB_ROOT` or `JLAB_API_URL` is set. Resolution is eager at import
+  and fails loudly if the platform is misconfigured (no silent fallback).
 - **Dask memory is treated as hostile.** Existing code sets `MALLOC_TRIM_THRESHOLD_`, wraps
   raster loads in throwaway fetcher functions so graphs get GC'd, and prefers polars for the
   big joins. Preserve these patterns; don't hold dask graph references in scope after compute.

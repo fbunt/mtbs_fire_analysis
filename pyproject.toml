@@ -27,6 +27,7 @@ dependencies = [
   "xarray",
   "raster-tools>=0.9.8",
   "python-dotenv>=1.2.3",
+  "jlab",
 ]
 
 [build-system]
@@ -98,3 +99,11 @@ known-first-party = ["mtbs_fire_analysis"]
 profile = "black"
 line_length = 79
 known_first_party = ["mtbs_fire_analysis"]
+
+[tool.uv.sources]
+jlab = { path = "../../../fastdata03/catalog-project/catalog", editable = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
