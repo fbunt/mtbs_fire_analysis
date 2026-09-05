@@ -26,6 +26,12 @@ uv run ruff format .
 
 # Rasterization steps are bash + GNU parallel + gdal_rasterize, not Python:
 bash mtbs_fire_analysis/pipeline/m01_rasterize_perims.sh
+
+# Wave-0 D9 gate: run m10 over the gate years through the catalog into a scratch
+# FIRE_DATA_ROOT and diff each year against the frozen golden (jlab comparator).
+# Smoke it read-only with --skip-run --skip-checksum (fixture hashes + resolution
+# sweep only). The full gate (no flags) takes ~25-40 min. See gate_d9.py.
+uv run python -m mtbs_fire_analysis.gate_d9 --scratch-root <dir> [--skip-run] [--skip-checksum] [--report <path.json>]
 ```
 
 Run the tests with `uv run pytest tests` (the catalog integration suite self-skips unless `JLAB_ROOT` points at a store with an index). There is no CI; also verify pipeline changes by running the relevant stage on a small year range.
