@@ -2,12 +2,13 @@
 
 The geohash LINEAR index (``geohasher.py``:
 ``ravel_multi_index((row, col), grid_shape) = row*W + col``) depends on the
-active grid's ``shape`` (the stride ``W``) and ``affine``. The
-substrate-overhaul divisible-by-256 pad (``FIRE_DIVISIBLE_GRID``) changes the
-grid width, so a geohash-keyed table is only join-compatible with another
-table built on the SAME grid. A join across grids mis-matches **silently**
-(wrong/empty rows, no error) -- a higher-severity failure than the raw-array
-shape-mismatch the all-layers barrier was designed for.
+active grid's ``shape`` (the stride ``W``) and ``affine``. Two extents sharing
+an origin still differ in ``W`` -- the legacy unpadded CONUS extent and the
+divisible-by-256 base grid do -- so a geohash-keyed table is only
+join-compatible with another table built on the SAME grid. A join across grids
+mis-matches **silently** (wrong/empty rows, no error) -- a higher-severity
+failure than the raw-array shape-mismatch the all-layers barrier was designed
+for.
 
 This module:
 
@@ -32,9 +33,8 @@ require-present tightening 2026-08-25, phd-research register row
 
 Back-compat: reading legacy / pre-stamp / upstream data now requires either
 re-running the stamping writers (m10/m10b/m11) or setting
-``FIRE_GRID_ALLOW_UNSTAMPED=1`` deliberately. With ``FIRE_DIVISIBLE_GRID``
-default-OFF the sidecar records the legacy grid and nothing about the grid
-itself changes.
+``FIRE_GRID_ALLOW_UNSTAMPED=1`` deliberately. The sidecar records whatever grid
+the geohasher actually hashed with, so it never has to be interpreted.
 
 **Schema v2 (2026-08-04) adds the CRS term.** Shape and affine are datum-blind,
 and the planned WGS84 re-anchor moves only the datum -- so a v1 stamp cannot
@@ -64,7 +64,7 @@ from pathlib import Path
 
 from affine import Affine
 
-from mtbs_fire_analysis.defaults import grid_for_pixel_m, grid_id_from
+from mtbs_fire_analysis.defaults import grid_id_from
 from mtbs_fire_analysis.geohasher import GridGeohasher
 
 #: The pre-2026-08 dialect: ``grid_shape`` + ``affine``, and therefore
@@ -146,26 +146,6 @@ def _sidecar_for(out_path: "str | Path", *, beside: bool = False) -> Path:
     return Path(f"{path}{SIDECAR_FILE_SUFFIX}")
 
 
-def _padding_state_of(geohasher):
-    """Whether ``geohasher``'s grid is the padded (``True``) or unpadded
-    (``False``) grid at its own resolution, or ``None`` for a custom grid.
-
-    Derived from the geohasher's actual ``grid_shape`` (not the ambient env),
-    so the recorded flag can never drift from the grid that was hashed with --
-    the authoritative identity is ``grid_id`` / ``grid_shape`` regardless.
-    """
-    pixel_m = int(round(abs(geohasher.affine.a)))
-    shape = tuple(geohasher.grid_shape)
-    try:
-        if shape == grid_for_pixel_m(pixel_m, padding_enabled=True)[1]:
-            return True
-        if shape == grid_for_pixel_m(pixel_m, padding_enabled=False)[1]:
-            return False
-    except ValueError:
-        pass
-    return None
-
-
 def write_grid_sidecar(
     out_path, geohasher, *, extra=None, beside=False
 ) -> Path:
@@ -197,7 +177,6 @@ def write_grid_sidecar(
         "schema": SCHEMA,
         "grid_id": geohasher.grid_id,
         **geohasher.grid_descriptor,
-        "divisible_grid": _padding_state_of(geohasher),
     }
     if extra:
         payload.update(extra)

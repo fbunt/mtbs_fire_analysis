@@ -19,58 +19,34 @@ BASE_PIXEL_M = 30
 _BASE_GEOHASH_AFFINE = Affine(
     30.0, 0.0, -2406135.0, 0.0, -30.0, 3222585.0, 0.0, 0.0, 1.0
 )
-_BASE_GEOHASH_GRID_SHAPE = (100150, 157144)
-
-# --- Divisible-by-256 canonical grid (substrate-overhaul Phase 3) ----------
-# The legacy base shape (100150, 157144) is NOT divisible by the base-2 overview
-# ladder, so coarse grids hit floor/ceil drift. FIRE_DIVISIBLE_GRID selects a
-# nodata-padded shape divisible by 256 (= 2**8): every existing 30 m pixel index
-# [i,j] is unchanged, only all-nodata cells are appended at the south/east edge
-# beyond CONUS, so floor == ceil at every base-2 factor up to 256
-# (30 m * 256 = 7680 m). The committed analysis ladder {30,120,480,1920} m only
-# needs factor 64 (1920/30); 256 is chosen for HEADROOM -- it costs only ~192
-# extra all-nodata rows (the width, hence every geohash, is identical to a *64
-# pad: 157184 is already divisible by 256) but future-proofs against ever
+# --- The 30 m base grid, AS BUILT (substrate-overhaul Phase 3) -------------
+# The legacy CONUS shape (100150, 157144) is NOT divisible by the base-2
+# overview ladder, so coarse grids hit floor/ceil drift. The base grid is
+# therefore the nodata-padded shape divisible by 256 (= 2**8): every 30 m pixel
+# index [i,j] is unchanged, only all-nodata cells are appended at the
+# south/east edge beyond CONUS, so floor == ceil at every base-2 factor up to
+# 256 (30 m * 256 = 7680 m). The committed analysis ladder {30,120,480,1920} m
+# only needs factor 64 (1920/30); 256 is chosen for HEADROOM -- it costs only
+# ~192 extra all-nodata rows (the width, hence every geohash, is identical to a
+# *64 pad: 157184 is already divisible by 256) but future-proofs against ever
 # extending the ladder coarser, which would otherwise force a SECOND
-# geohash-table re-pad cutover. Default OFF preserves the legacy shape
-# byte-identically, so upstream/Fred users are unaffected (env-hook, not a
-# default swap -- mirrors FIRE_PIXEL_M / FIRE_NLCD_SUBDIR).
+# geohash-table re-pad cutover.
+#
+# There is NO switch: this shape IS the base grid identity, and a data root
+# built at another extent declares that extent as built in its own
+# root_config.json (phd-research
+# D-2026-09-08-padded-grid-is-the-base-grid-identity).
 # ! The pad is additive for the SPATIAL index [i,j] but NOT for the geohash
-# LINEAR index (geohash = row*W + col): legacy W=157144 -> padded W=157184
-# shifts every geohash, so on flip every stored geohash-keyed table must be
-# regenerated and guarded against cross-grid joins. See
+# LINEAR index (geohash = row*W + col): legacy W=157144 -> W=157184 shifts
+# every geohash, so a table stored on the legacy grid must be regenerated and
+# is guarded against cross-grid joins. See
 # docs/plans/SUBSTRATE_OVERHAUL_PHASE3_EXECUTION.md.
-_PADDED_GEOHASH_GRID_SHAPE = (100352, 157184)
+_GEOHASH_GRID_SHAPE = (100352, 157184)
 
 
-def divisible_grid_from_env():
-    """Whether ``FIRE_DIVISIBLE_GRID`` selects the nodata-padded,
-    divisible-by-256 base grid.
-
-    Unset/empty/``0``/``false``/``no``/``off`` => ``False`` (the legacy
-    unpadded grid is preserved byte-identically, so existing upstream users
-    are unaffected). Truthy (``1``/``true``/``yes``/``on``) => ``True``.
-    """
-    raw = os.environ.get("FIRE_DIVISIBLE_GRID")
-    if not raw:
-        return False
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
-
-
-def base_grid_shape(padding_enabled=None):
-    """The active 30 m base-grid ``(height, width)``.
-
-    Returns the nodata-padded divisible-by-256 shape when padding is enabled
-    (explicit ``padding_enabled`` overrides; ``None`` defers to
-    ``divisible_grid_from_env()``), else the legacy unpadded shape.
-    """
-    if padding_enabled is None:
-        padding_enabled = divisible_grid_from_env()
-    return (
-        _PADDED_GEOHASH_GRID_SHAPE
-        if padding_enabled
-        else _BASE_GEOHASH_GRID_SHAPE
-    )
+def base_grid_shape():
+    """The 30 m base-grid ``(height, width)``, as built."""
+    return _GEOHASH_GRID_SHAPE
 
 
 def grid_descriptor(grid_shape, affine, crs_id=None):
@@ -80,10 +56,10 @@ def grid_descriptor(grid_shape, affine, crs_id=None):
     ``ravel_multi_index((row,col), grid_shape) = row*W + col``) is fully
     determined by the grid ``shape`` (the stride ``W``) and the ``affine``
     (which maps a point's xy to its ``(row,col)``). Two geohash-keyed tables
-    are join-compatible iff both match. ``FIRE_DIVISIBLE_GRID`` changes ``W``,
-    so the padded grid has a DIFFERENT descriptor than the legacy grid
-    (substrate-overhaul Phase 3, §1: the pad is additive for the spatial index
-    ``[i,j]`` but NOT for the geohash linear index).
+    are join-compatible iff both match. An extent change moves ``W``, so a
+    grid built at the legacy unpadded CONUS extent has a DIFFERENT descriptor
+    than this one (substrate-overhaul Phase 3, §1: the pad is additive for the
+    spatial index ``[i,j]`` but NOT for the geohash linear index).
 
     ``crs_id`` adds the CRS term. Shape and affine are **datum-blind**: the
     planned WGS84 re-anchor preserves projection, extent and origin and moves
@@ -139,15 +115,15 @@ _DROPPED_AREA_WARN_THRESHOLD = 0.01
 _dropped_area_warned: "set[int]" = set()
 
 
-def coarsening_dropped_area_fraction(pixel_m, padding_enabled=None):
+def coarsening_dropped_area_fraction(pixel_m):
     """Fraction of the base 30 m grid area dropped by ``grid_for_pixel_m``'s
     floor-division at ``pixel_m``.
 
     The dropped cells are the partial bottom/right edge that does not complete
     a full ``pixel_m`` x ``pixel_m`` block. Returns ``0.0`` when ``pixel_m``
-    divides the active base shape exactly on both axes (always at 30 m; and at
-    every base-2 factor on the divisible-by-256 padded grid -- see
-    ``base_grid_shape``). ``padding_enabled`` overrides the env hook.
+    divides the base shape exactly on both axes -- which, on the
+    divisible-by-256 base grid, is every base-2 factor up to 256 (see
+    ``base_grid_shape``).
     """
     if pixel_m <= 0 or pixel_m % BASE_PIXEL_M != 0:
         raise ValueError(
@@ -155,17 +131,17 @@ def coarsening_dropped_area_fraction(pixel_m, padding_enabled=None):
             f"{BASE_PIXEL_M} m (got {pixel_m!r})"
         )
     factor = pixel_m // BASE_PIXEL_M
-    h, w = base_grid_shape(padding_enabled)
+    h, w = base_grid_shape()
     covered = (h // factor * factor) * (w // factor * factor)
     return 1.0 - covered / (h * w)
 
 
-def _warn_if_dropped_area_exceeds(pixel_m, padding_enabled=None):
+def _warn_if_dropped_area_exceeds(pixel_m):
     """Warn once per ``pixel_m`` if coarsening drops more than
     ``_DROPPED_AREA_WARN_THRESHOLD`` of the base-grid area."""
     if pixel_m in _dropped_area_warned:
         return
-    frac = coarsening_dropped_area_fraction(pixel_m, padding_enabled)
+    frac = coarsening_dropped_area_fraction(pixel_m)
     if frac > _DROPPED_AREA_WARN_THRESHOLD:
         _dropped_area_warned.add(pixel_m)
         warnings.warn(
@@ -178,7 +154,7 @@ def _warn_if_dropped_area_exceeds(pixel_m, padding_enabled=None):
         )
 
 
-def grid_for_pixel_m(pixel_m, padding_enabled=None):
+def grid_for_pixel_m(pixel_m):
     """``(affine, (height, width))`` for the analysis grid at ``pixel_m`` m.
 
     The coarse grid shares the native 30 m grid's top-left origin and uses
@@ -187,10 +163,9 @@ def grid_for_pixel_m(pixel_m, padding_enabled=None):
     of 30 m (a clean k x k aggregation of native cells); ``30`` returns the
     native grid unchanged.
 
-    The base shape follows the active grid (``base_grid_shape`` /
-    ``FIRE_DIVISIBLE_GRID``); ``padding_enabled`` overrides the env hook. On
-    the divisible-by-256 padded grid floor == ceil at every base-2 factor, so
-    no edge cell is dropped for the blessed resolutions.
+    The base shape is ``base_grid_shape()``, the divisible-by-256 extent, on
+    which floor == ceil at every base-2 factor, so no edge cell is dropped for
+    the blessed resolutions.
     """
     if pixel_m <= 0 or pixel_m % BASE_PIXEL_M != 0:
         raise ValueError(
@@ -200,8 +175,8 @@ def grid_for_pixel_m(pixel_m, padding_enabled=None):
     factor = pixel_m // BASE_PIXEL_M
     a = _BASE_GEOHASH_AFFINE
     affine = Affine(a.a * factor, a.b, a.c, a.d, a.e * factor, a.f)
-    h, w = base_grid_shape(padding_enabled)
-    _warn_if_dropped_area_exceeds(pixel_m, padding_enabled)
+    h, w = base_grid_shape()
+    _warn_if_dropped_area_exceeds(pixel_m)
     return affine, (h // factor, w // factor)
 
 
@@ -291,15 +266,14 @@ DEFAULT_GEOHASH_GEOBOX = GeoBox(
 )
 
 
-def geobox_for_pixel_m(pixel_m, padding_enabled=None):
+def geobox_for_pixel_m(pixel_m):
     """``GeoBox`` for the grid at ``pixel_m`` m (CRS = ``DEFAULT_CRS``).
 
     The explicit per-resolution counterpart of ``DEFAULT_GEOHASH_GEOBOX``
     (which follows ``FIRE_PIXEL_M``); use it where a builder needs a target
-    grid for a resolution other than the process default. ``padding_enabled``
-    overrides the ``FIRE_DIVISIBLE_GRID`` env hook.
+    grid for a resolution other than the process default.
     """
-    affine, shape = grid_for_pixel_m(pixel_m, padding_enabled)
+    affine, shape = grid_for_pixel_m(pixel_m)
     return GeoBox(shape, affine, DEFAULT_CRS)
 
 

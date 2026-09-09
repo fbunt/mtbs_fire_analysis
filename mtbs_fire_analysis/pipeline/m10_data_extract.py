@@ -132,9 +132,9 @@ def _assert_membership_resolution(path: str, pixel_m: int) -> None:
     only grows ``(height, width)`` at the S/E edge, so a stale *unpadded*
     membership raster (or any wrong-grid raster of coincidentally-matching
     pixel size) would pass a size check yet mis-register the row strips against
-    the padded BP grid. So assert the **exact** target grid -- shape AND
+    the base BP grid. So assert the **exact** target grid -- shape AND
     transform (origin + resolution) -- against ``grid_for_pixel_m(pixel_m)``,
-    which follows the active ``FIRE_DIVISIBLE_GRID`` env. Same spirit as
+    the extent the base grid declares. Same spirit as
     ``raster_read._assert_source_is_native_resolution`` and
     ``ingest._common.grid_check.grid_alignment_check``.
     """
@@ -156,10 +156,10 @@ def _assert_membership_resolution(path: str, pixel_m: int) -> None:
         raise ValueError(
             f"membership raster {path} shape {shape} != analysis grid "
             f"{(exp_h, exp_w)} at {pixel_m} m. A coincidentally-matching "
-            "pixel size on the wrong (e.g. unpadded vs divisible-padded) "
-            "grid mis-registers the row strips silently -- point at the "
-            "grid-matched raster or re-encode it onto the active grid "
-            "(FIRE_DIVISIBLE_GRID)."
+            "pixel size on the wrong (e.g. legacy unpadded vs "
+            "divisible-by-256) grid mis-registers the row strips silently -- "
+            "point at the grid-matched raster or re-encode it onto the "
+            "active grid."
         )
     # Origin + pixel size to sub-pixel tolerance (mirrors grid_check tols:
     # pixel exact to round-off, origin within a pixel).
