@@ -55,11 +55,23 @@ def adapter(request, tmp_path, monkeypatch):
     importlib.reload(cp)
     cp.client.cache_clear()
     if profile_id == "fire":
+        # Self-skip until EVERY bound product exists for the gate years: a
+        # partially built product set (S9 builds the gate years, S10 the rest)
+        # would otherwise fail these tests for a missing role rather than a
+        # broken adapter. Names the missing (role, year) pairs.
         c = cp.client()
-        col = profiles.input_collection(c.profile, "mtbs_bs")
-        if not c.find(col, year=2010):
+        missing = []
+        for role in cp.ROLES:
+            col = profiles.input_collection(c.profile, role)
+            if c.find(col):
+                continue
+            missing.extend(
+                f"{role}@{y}" for y in GATE_YEARS if not c.find(col, year=y)
+            )
+        if missing:
             pytest.skip(
-                f"fire products not built yet (S9/S10): {col} has no 2010 Item"
+                "fire products not all built yet (S9/S10); unresolved: "
+                + ", ".join(missing)
             )
     yield cp
     cp.client.cache_clear()
