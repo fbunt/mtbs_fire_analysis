@@ -132,12 +132,14 @@ lat = 1e-4
 # Pre-diff pixel-identity assertion (spec section 8 Risk 1). Under one-Item-per-
 # artifact the wave-1 1985 artifact holds only its 1985 member, so the golden
 # byte is looked up THROUGH THE CLIENT with deprecated Items included (collection
-# legacy-nlcd), not assumed to sit beside the resolved 1985 path. Year 1984 has
-# no Item; it floors to the 1985 artifact.
+# legacy-nlcd), not assumed to sit beside the resolved 1985 path. Gate year 1984
+# has no Item; it floors to the 1985 artifact, so the golden is pinned to the 1985
+# raster (the true pixel oracle -- since S12 legacy-nlcd authors no 1984 Item, and
+# the 1984 and 1985 rasters carry the same band checksum 42668).
 [[verification.d9.checksum_assertions]]
 collection = "nlcd-landcover-c1v2"
 year = 1984
-golden = { collection = "legacy-nlcd", member = "Annual_NLCD_LndCov_1984_CU_C1V2.tif" }
+golden = { collection = "legacy-nlcd", year = 1985, member = "Annual_NLCD_LndCov_1985_CU_C1V2.tif" }
 
 # The full-extent golden-diff: every year 1984-2022 against the full golden.
 [verification.d9_full]
@@ -160,7 +162,7 @@ lat = 1e-4
 [[verification.d9_full.checksum_assertions]]
 collection = "nlcd-landcover-c1v2"
 year = 1984
-golden = { collection = "legacy-nlcd", member = "Annual_NLCD_LndCov_1984_CU_C1V2.tif" }
+golden = { collection = "legacy-nlcd", year = 1985, member = "Annual_NLCD_LndCov_1985_CU_C1V2.tif" }
 
 # The level-1 equivalence gate (spec sections 8, 10): each product compared
 # artifact-for-artifact against the frozen level-1 oracle fixture and, at the gate
