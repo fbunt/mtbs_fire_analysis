@@ -1,0 +1,287 @@
+# fire -- the fire_analysis project profile (platform-spec sections 7, 10, 11).
+#
+# THIS is the project. It lives in the consumer repo (fire_analysis), not in the
+# platform, and carries only VALUES: the query (which products this analysis
+# uses), the temporal resolve policies, the role -> collection input bindings the
+# consumer adapter reads, and the registered verifications. It is submitted to
+# the platform's execute-and-catalog entrypoint BY PATH and registered/served
+# read-only by the platform (`jlab profile register <this file>`); the platform
+# repo carries only a synthetic example profile. All the dataset vocabulary lives
+# here because a profile is data.
+
+id = "fire"
+name = "Fire analysis (mtbs_fire_analysis)"
+aliases = []
+
+# Drop deprecated Items at lookup (spec section 11): this project wants the
+# current product generation, not the superseded legacy-* imports. (The gate
+# comparisons below reach the legacy oracles through include_deprecated at the
+# comparator, not through the selection.)
+exclude_deprecated = true
+
+[grid]
+# The CONUS Albers 30 m grid every product lives on, and the CONUS mask (the
+# aggregate row of the states product). Both already exist in the platform
+# registry (grids/conus-albers-30m.toml, grids/masks/conus.toml).
+ids = ["conus-albers-30m"]
+mask = "conus"
+
+[selection]
+# The query form is an explicit collection-id list: the 21 wave-1 PRODUCT
+# collections plus the 8 RAW collections they derive from (confirmed against each
+# datasets/<product>/recipe.toml `[inputs.*] collection`). The raw collections
+# are selected so the client resolves them as recipe inputs.
+collections = [
+  # products
+  "epa-ecoregions",
+  "epa-ecoregions-l1-raster",
+  "epa-ecoregions-l2-raster",
+  "epa-ecoregions-l3-raster",
+  "hex-grid",
+  "us-states-with-aggregates",
+  "mtbs-burn-severity",
+  "mtbs-perimeters",
+  "mtbs-perimeters-by-year",
+  "mtbs-ignition-dse",
+  "nlcd-landcover-c1v2",
+  "nlcd-landcover-mode-1985-2022",
+  "edna-elevation",
+  "edna-slope",
+  "edna-aspect",
+  "silvis-wui-blocks",
+  "silvis-wui-blocks-bool",
+  "silvis-wui-flag",
+  "silvis-wui-class",
+  "silvis-wui-bool",
+  "silvis-wui-proximity",
+  # raw inputs (direct recipe inputs of the products above)
+  "raw-ecoregions-l3",
+  "raw-hex-grid",
+  "raw-census-states-2018",
+  "raw-mtbs-bs",
+  "raw-mtbs-perims",
+  "raw-nlcd-c1v2",
+  "raw-edna-dem",
+  "raw-wui-blocks-v4",
+]
+
+# Per-collection temporal resolve policy bindings (jlab.resolve kinds). Lookup is
+# exact-id-first, then the first fnmatch glob in file order.
+
+[policies."nlcd-landcover-c1v2"]
+# NLCD is catalogued at its true 1985-2022 extent (no 1984 Item); a gate year
+# 1984 floors to 1985 and resolves to the nearest earlier available year.
+kind = "nearest-earlier-with-floor"
+floor = 1985
+
+[policies."silvis-wui-*"]
+# The WUI products publish one artifact per decade bucket; a year selects the
+# greatest bucket <= year, and a year below 1990 clamps to 1990. This glob
+# intentionally catches ALL six silvis-wui-* collections, silvis-wui-blocks and
+# silvis-wui-blocks-bool included: those are single-artifact-per-decade too, so
+# bucket-select is the correct policy for them as well (no harmful over-match).
+kind = "bucket-select"
+buckets = [1990, 2000, 2010, 2020]
+clamp_low = true
+
+# Role -> collection input bindings (spec section 7). The consumer adapter (S8)
+# looks a role up here and carries NO collection literal in its code. Every value
+# must be a selected collection.
+[inputs]
+nlcd = "nlcd-landcover-c1v2"
+nlcd_mode = "nlcd-landcover-mode-1985-2022"
+mtbs_bs = "mtbs-burn-severity"
+dse = "mtbs-ignition-dse"
+perims = "mtbs-perimeters"
+states = "us-states-with-aggregates"
+eco_regions = "epa-ecoregions"
+hex_grid = "hex-grid"
+dem = "edna-elevation"
+slope = "edna-slope"
+aspect = "edna-aspect"
+wui_flag = "silvis-wui-flag"
+wui_class = "silvis-wui-class"
+wui_bool = "silvis-wui-bool"
+wui_prox = "silvis-wui-proximity"
+
+# ---------------------------------------------------------------------------
+# Registered verifications (spec section 10). The platform ships the registry +
+# comparator primitives and names no dataset; this is the dataset binding the D9
+# gate harness and the level-1 equivalence harness read.
+
+# A level-2 golden-diff over the gate years: run the consumer's m10 reading every
+# input through the client, then diff each year against the frozen golden fixture.
+[verification.d9]
+kind = "golden-diff"
+# Fixture path RELATIVE to the store root (JLAB_ROOT); the frozen read-only oracle.
+fixture = ".fixtures/m10-golden-20260831"
+years = [1984, 2005, 2010, 2022]
+# Sort keys for row alignment (m10 dedupes on this triple, so it is a total order).
+sort_keys = ["geohash", "Ig_Date", "Event_ID"]
+# The dask partition-local index is order-dependent and carries no information.
+exclude = ["__null_dask_index__"]
+# Per-year output directory under the data root and under the fixture.
+output_dir_pattern = "mtbs_CONUS_{year}"
+
+[verification.d9.atol]
+# lon/lat are recomputed per row by pyproj from the (identical) geohash grid and
+# differ by <= ~1e-5 deg run-to-run; compare within tolerance rather than exact.
+lon = 1e-4
+lat = 1e-4
+
+# Pre-diff pixel-identity assertion (spec section 8 Risk 1). Under one-Item-per-
+# artifact the wave-1 1985 artifact holds only its 1985 member, so the golden
+# byte is looked up THROUGH THE CLIENT with deprecated Items included (collection
+# legacy-nlcd), not assumed to sit beside the resolved 1985 path. Year 1984 has
+# no Item; it floors to the 1985 artifact.
+[[verification.d9.checksum_assertions]]
+collection = "nlcd-landcover-c1v2"
+year = 1984
+golden = { collection = "legacy-nlcd", member = "Annual_NLCD_LndCov_1984_CU_C1V2.tif" }
+
+# The full-extent golden-diff: every year 1984-2022 against the full golden.
+[verification.d9_full]
+kind = "golden-diff"
+fixture = ".fixtures/m10-golden-full-20260831"
+years = [
+  1984, 1985, 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993,
+  1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003,
+  2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013,
+  2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022,
+]
+sort_keys = ["geohash", "Ig_Date", "Event_ID"]
+exclude = ["__null_dask_index__"]
+output_dir_pattern = "mtbs_CONUS_{year}"
+
+[verification.d9_full.atol]
+lon = 1e-4
+lat = 1e-4
+
+[[verification.d9_full.checksum_assertions]]
+collection = "nlcd-landcover-c1v2"
+year = 1984
+golden = { collection = "legacy-nlcd", member = "Annual_NLCD_LndCov_1984_CU_C1V2.tif" }
+
+# The level-1 equivalence gate (spec sections 8, 10): each product compared
+# artifact-for-artifact against the frozen level-1 oracle fixture and, at the gate
+# years, against an oracle collection resolved through the client. oracle_path
+# values are RELATIVE to the fixture root (the frozen manifest lists exactly these
+# files). years is absent => all years the product publishes.
+[verification.level1]
+kind = "artifact-equivalence"
+fixture = ".fixtures/level1-cleaned-20260827"
+
+[verification.level1.collections.mtbs-burn-severity]
+oracle_collection = "legacy-mtbs"
+oracle_path = "mtbs_bs_rasters/cleaned/mtbs_CONUS_{year}.tif"
+rule = "exact"
+
+[verification.level1.collections.nlcd-landcover-c1v2]
+oracle_collection = "legacy-nlcd"
+oracle_path = "nlcd/cleaned/Annual_NLCD_LndCov_{year}_CU_C1V2.tif"
+rule = "exact"
+
+[verification.level1.collections.nlcd-landcover-mode-1985-2022]
+oracle_collection = "legacy-nlcd-mode"
+oracle_path = "nlcd/cleaned/nlcd_mode_1984_2022.tif"
+rule = "exact"
+expected_diff = "the legacy mode double-counted 1985 via the 1984 copy; this product reduces 1985-2022 once -- a measured, accepted difference (spec section 8)"
+
+[verification.level1.collections.edna-elevation]
+oracle_collection = "legacy-edna-dem"
+oracle_path = "edna/cleaned/edna_dem.tif"
+rule = "atol"
+atol = 1e-3
+
+[verification.level1.collections.edna-slope]
+oracle_collection = "legacy-edna-slope"
+oracle_path = "edna/cleaned/edna_slope.tif"
+rule = "atol"
+atol = 1e-3
+
+[verification.level1.collections.edna-aspect]
+oracle_collection = "legacy-edna-aspect"
+oracle_path = "edna/cleaned/edna_aspect.tif"
+rule = "atol"
+atol = 1e-3
+
+[verification.level1.collections.mtbs-ignition-dse]
+oracle_collection = "legacy-dse"
+oracle_path = "mtbs_perims/rasters/dse_{year}.tif"
+rule = "exact"
+
+[verification.level1.collections.mtbs-perimeters]
+oracle_collection = "legacy-perims"
+oracle_path = "mtbs_perims/cleaned/mtbs_perims_trimmed.gpkg"
+rule = "exact"
+keys = ["Event_ID", "Ig_Date"]
+
+[verification.level1.collections.mtbs-perimeters-by-year]
+# No oracle collection: the by-year gpkg has one layer per year (named {year}).
+oracle_path = "mtbs_perims/cleaned/mtbs_perims_by_year.gpkg"
+oracle_layer = "{year}"
+rule = "exact"
+keys = ["Event_ID", "Ig_Date"]
+
+[verification.level1.collections.epa-ecoregions]
+oracle_collection = "legacy-eco-regions"
+oracle_path = "eco_regions/cleaned/eco_regions.gpkg"
+rule = "exact"
+keys = ["eco_lvl_3"]
+
+[verification.level1.collections.epa-ecoregions-l1-raster]
+oracle_path = "eco_regions/rasters/eco_lvl_1.tif"
+rule = "exact"
+
+[verification.level1.collections.epa-ecoregions-l2-raster]
+oracle_path = "eco_regions/rasters/eco_lvl_2.tif"
+rule = "exact"
+
+[verification.level1.collections.epa-ecoregions-l3-raster]
+oracle_path = "eco_regions/rasters/eco_lvl_3.tif"
+rule = "exact"
+
+[verification.level1.collections.hex-grid]
+oracle_collection = "hex_grid"
+oracle_path = "hex_grid/cleaned/hex_grid.gpkg"
+rule = "exact"
+keys = ["hexel_id"]
+
+[verification.level1.collections.us-states-with-aggregates]
+oracle_collection = "state_borders"
+oracle_path = "state_borders/cleaned/states.shp"
+rule = "exact"
+keys = ["GEOID"]
+
+[verification.level1.collections.silvis-wui-blocks]
+# The consumer kept only the 8 WUI columns + geometry, so there is no stable key
+# column: compare in geometry order (keys = []). Layer "wui" of the intermediate.
+oracle_path = "wui/intermediate/wui.gpkg"
+oracle_layer = "wui"
+rule = "exact"
+keys = []
+
+[verification.level1.collections.silvis-wui-blocks-bool]
+oracle_path = "wui/intermediate/wui.gpkg"
+oracle_layer = "wui_bool_{year}"
+rule = "exact"
+
+[verification.level1.collections.silvis-wui-flag]
+oracle_collection = "legacy-wui-flag"
+oracle_path = "wui/cleaned/wui_flag_{year}.tif"
+rule = "exact"
+
+[verification.level1.collections.silvis-wui-class]
+oracle_collection = "legacy-wui-class"
+oracle_path = "wui/cleaned/wui_class_{year}.tif"
+rule = "exact"
+
+[verification.level1.collections.silvis-wui-bool]
+oracle_collection = "legacy-wui-bool"
+oracle_path = "wui/cleaned/wui_bool_{year}.tif"
+rule = "exact"
+
+[verification.level1.collections.silvis-wui-proximity]
+oracle_collection = "legacy-wui-prox"
+oracle_path = "wui/cleaned/wui_prox_{year}.tif"
+rule = "exact"
