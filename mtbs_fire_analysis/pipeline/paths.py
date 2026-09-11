@@ -105,10 +105,12 @@ def get_points_combined_path(years, aoi_code):
 # --- Catalog-backed rebinding (jlab client) ---------------------------------
 # When the catalog is enabled (see catalog_paths.catalog_enabled), the 12
 # catalog-backed names below are served from the platform store via the jlab
-# client instead of the legacy FIRE_DATA_ROOT layout above. The 9 constants
+# client instead of the FIRE_DATA_ROOT layout above. Each resolve() argument is
+# an INPUT ROLE (catalog_paths.ROLES), not a collection literal: the active
+# profile's [inputs] table maps the role to a collection. The 9 constants
 # resolve eagerly here (a mounted store makes localize cheap); the 3 builders
 # bind by reference. Every other name in this module (scratch, results, cache,
-# raw layout, get_points_path) stays on the legacy layout untouched.
+# raw layout, get_points_path) stays on the FIRE_DATA_ROOT layout untouched.
 #
 # Resolution is eager and NOT wrapped in a fallback: a misconfigured platform
 # must fail loudly at import with the CatalogResolveError/ClientError message,
@@ -116,13 +118,13 @@ def get_points_combined_path(years, aoi_code):
 from mtbs_fire_analysis.pipeline import catalog_paths  # noqa: E402
 
 if catalog_paths.catalog_enabled():
-    ASPECT_PATH = catalog_paths.resolve("legacy-edna-aspect")
-    ECO_REGIONS_PATH = catalog_paths.resolve("legacy-eco-regions")
-    ELEVATION_PATH = catalog_paths.resolve("legacy-edna-dem")
+    ASPECT_PATH = catalog_paths.resolve("aspect")
+    ECO_REGIONS_PATH = catalog_paths.resolve("eco_regions")
+    ELEVATION_PATH = catalog_paths.resolve("dem")
     HEX_GRID_PATH = catalog_paths.resolve("hex_grid")
-    NLCD_MODE_RASTER_PATH = catalog_paths.resolve("legacy-nlcd-mode")
-    PERIMS_PATH = catalog_paths.resolve("legacy-perims")
-    SLOPE_PATH = catalog_paths.resolve("legacy-edna-slope")
+    NLCD_MODE_RASTER_PATH = catalog_paths.resolve("nlcd_mode")
+    PERIMS_PATH = catalog_paths.resolve("perims")
+    SLOPE_PATH = catalog_paths.resolve("slope")
     STATES_PATH = catalog_paths.states_path()
     PERIMS_RASTERS_PATH = catalog_paths.perims_rasters_dir()
     get_mtbs_raster_path = catalog_paths.get_mtbs_raster_path

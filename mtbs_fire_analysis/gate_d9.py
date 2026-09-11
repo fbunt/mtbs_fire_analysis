@@ -12,22 +12,27 @@ Run it as::
 
     uv run python -m mtbs_fire_analysis.gate_d9 \\
         --scratch-root <dir> [--years 1984 ...] [--skip-run] \\
-        [--skip-checksum] [--report <path.json>] [--profile wave0-gate]
+        [--skip-checksum] [--report <path.json>] [--profile wave0-gate] \\
+        [--verification d9|d9_full]
 
 Steps, each logged and recorded in the JSON report:
 
-  0. Load the profile and its ``d9`` verification, resolve the fixture under
-     ``JLAB_ROOT``, and ``verify_fixture_hashes`` -- a mismatch aborts (the
-     oracle rotted).
+  0. Load the profile and the ``--verification`` entry (``d9`` gate years, or
+     ``d9_full`` all years), resolve the fixture under ``JLAB_ROOT``, and
+     ``verify_fixture_hashes`` -- a mismatch aborts (the oracle rotted).
   1. Point ``FIRE_DATA_ROOT`` at the scratch tree, set ``FIRE_CATALOG=1`` and
      the client's PAM proxy, confine caches to the scratch tree, and pin
      ``PROJ_NETWORK=OFF`` (network grid fetches made lon/lat ``inf`` in a dask
      worker) -- ALL before importing ``paths``/``m10`` (paths.py reads env at
      import).
-  2. Resolve all 12 catalog-backed inputs through the adapter for every gate
-     year and assert each path exists (a miss fails here, not as an opaque m10
-     crash).
-  3. Run the registry's ``checksum_assertions`` (GDAL band checksums).
+  2. Resolve the catalog-backed inputs and assert each path exists (a miss
+     fails here, not as an opaque m10 crash): the named inputs ``m10`` imports,
+     AND every input ROLE the profile's ``[inputs]`` table binds (static once,
+     temporal per gate year).
+  3. Run the registry's ``checksum_assertions`` (GDAL band checksums). Each
+     asserts the resolved ``(collection, year)`` item against a golden byte
+     located through the client from the ``golden`` sub-table (deprecated
+     included), or beside the resolved path via the wave-0 ``golden_member``.
   4. Unless ``--skip-run``: run ``m10 --clear-cache`` per year in scratch as a
      subprocess and assert each output was freshly produced.
   5. Diff each year against the fixture; exit 0 iff every year is ``ok``.
@@ -83,14 +88,15 @@ def _log(msg: str) -> None:
 # step 0: profile + fixture + oracle hash check
 
 
-def _load_profile_and_fixture(profile_id: str):
-    """Load the profile and its ``d9`` verification, resolve the fixture dir
-    under ``JLAB_ROOT`` (env, or the repo ``.env`` via python-dotenv), and read
-    the fixture ``manifest.json``. Returns ``(profile, verification,
-    fixture_dir, manifest)``. Raises ``GateAbort`` when unconfigured."""
+def _load_profile_and_fixture(profile_id: str, verification_name: str = "d9"):
+    """Load the profile and its ``verification_name`` verification (``d9`` or
+    ``d9_full``), resolve the fixture dir under ``JLAB_ROOT`` (env, or the repo
+    ``.env`` via python-dotenv), and read the fixture ``manifest.json``.
+    Returns ``(profile, verification, fixture_dir, manifest)``. Raises
+    ``GateAbort`` when unconfigured."""
     load_dotenv(REPO_ROOT / ".env")  # override=False: an exported env var wins
     profile = profiles.load_profile(profile_id)
-    verification = profiles.verification_for(profile, "d9")
+    verification = profiles.verification_for(profile, verification_name)
     jlab_root = os.environ.get("JLAB_ROOT")
     if not jlab_root:
         raise GateAbort(
@@ -245,29 +251,119 @@ def _resolution_sweep(paths_mod, years):
     return resolved
 
 
+def _role_sweep(profile, years):
+    """Resolve every ``[inputs]`` role the profile declares through the adapter
+    and assert each path exists. This is the profile-contract half of step 2:
+    the name-based sweep above checks what ``m10`` imports; this checks that
+    every role the profile binds resolves under the active profile.
+
+    A role is treated as STATIC when ``resolve(role)`` with no year yields a
+    single Item; otherwise (zero or many) it is TEMPORAL and resolved per gate
+    year -- no cadence is hard-coded. Returns the list of records
+    ``{role, collection, year, path, exists}``; raises ``GateAbort`` on the
+    first path that does not exist (carrying the failing role/year)."""
+    from mtbs_fire_analysis.pipeline import catalog_paths
+
+    inputs = profile.get("inputs", {}) if profile else {}
+    records = []
+    for role in inputs:
+        collection = profiles.input_collection(profile, role)
+        try:
+            targets = [(None, Path(catalog_paths.resolve(role)))]
+        except catalog_paths.CatalogResolveError:
+            targets = [
+                (y, Path(catalog_paths.resolve(role, year=y))) for y in years
+            ]
+        for year, path in targets:
+            exists = path.exists()
+            rec = {
+                "role": role,
+                "collection": collection,
+                "year": year,
+                "path": str(path),
+                "exists": exists,
+            }
+            records.append(rec)
+            if not exists:
+                raise GateAbort(
+                    "resolution",
+                    f"input role {role!r} (collection {collection!r}, "
+                    f"year={year}) resolved to a path that does not exist: "
+                    f"{path}",
+                    role=role,
+                    collection=collection,
+                    year=year,
+                    resolved=records,
+                )
+    return records
+
+
 # ---------------------------------------------------------------------------
 # step 3: checksum assertions
+
+
+def _localize_one(cli, collection, *, year=None, include_deprecated=None):
+    """Resolve ``(collection, year)`` through the client to exactly one Item
+    and localize it. Raises ``GateAbort`` when zero or many Items match."""
+    items = cli.find(
+        collection, year=year, include_deprecated=include_deprecated
+    )
+    if len(items) != 1:
+        ids = [it.get("id") for it in items]
+        raise GateAbort(
+            "checksum",
+            f"expected exactly one item for {collection!r} year={year!r}, "
+            f"got {len(ids)}: {ids}",
+            collection=collection,
+            year=year,
+        )
+    return Path(cli.localize(items[0]))
+
+
+def _golden_path(cli, entry, resolved):
+    """Locate the golden byte for a checksum assertion. Returns
+    ``(golden_path, form)``. Prefers the wave-1 ``golden`` sub-table (looked up
+    through the client with deprecated Items included); falls back to the
+    wave-0 ``golden_member`` form (a file beside the resolved path)."""
+    golden_spec = entry.get("golden")
+    if golden_spec is not None:
+        g_col = golden_spec["collection"]
+        g_year = golden_spec.get("year", entry["year"])
+        g_member = golden_spec["member"]
+        g_local = _localize_one(
+            cli, g_col, year=g_year, include_deprecated=True
+        )
+        if g_local.name == g_member:
+            golden = g_local
+        else:
+            art_dir = g_local if g_local.is_dir() else g_local.parent
+            golden = art_dir / g_member
+        return golden, "golden"
+    member = entry["golden_member"]
+    return resolved.parent / member, "golden_member"
 
 
 def _run_checksum_assertions(verification):
     """Run the registry's band-checksum assertions: the item the profile
     resolves for ``(collection, year)`` must have the same GDAL band checksum
-    as ``golden_member`` in the same store artifact directory. Returns the list
-    of records; raises ``GateAbort`` on a mismatch."""
+    as the golden byte. The golden is located from the ``golden`` sub-table
+    (looked up through the client) or the wave-0 ``golden_member`` form (a file
+    beside the resolved path). Returns the list of records; raises
+    ``GateAbort`` on a mismatch."""
     from mtbs_fire_analysis.pipeline import catalog_paths
 
+    cli = catalog_paths.client()
     records = []
     for entry in verification.get("checksum_assertions", []):
         collection = entry["collection"]
         year = entry["year"]
-        member = entry["golden_member"]
-        resolved = Path(catalog_paths.resolve(collection, year=year))
-        golden = resolved.parent / member
+        resolved = _localize_one(cli, collection, year=year)
+        golden, form = _golden_path(cli, entry, resolved)
         if not golden.is_file():
             raise GateAbort(
                 "checksum",
-                f"golden member {golden} not found beside the resolved "
-                f"{collection} year={year} path",
+                f"golden byte {golden} (form {form}) not found for "
+                f"{collection} year={year}",
                 collection=collection,
                 year=year,
             )
@@ -278,14 +374,16 @@ def _run_checksum_assertions(verification):
             "year": year,
             "resolved": str(resolved),
             "golden_member": str(golden),
+            "golden_form": form,
             "checksum_resolved": cs_resolved,
             "checksum_golden": cs_golden,
             "match": cs_resolved == cs_golden,
         }
         records.append(rec)
         _log(
-            f"checksum {collection} year={year}: resolved={cs_resolved} "
-            f"golden={cs_golden} -> {'OK' if rec['match'] else 'MISMATCH'}"
+            f"checksum {collection} year={year} ({form}): "
+            f"resolved={cs_resolved} golden={cs_golden} -> "
+            f"{'OK' if rec['match'] else 'MISMATCH'}"
         )
         if not rec["match"]:
             raise GateAbort(
@@ -484,6 +582,7 @@ def run_gate(args) -> int:
     scratch_root = Path(args.scratch_root).resolve()
     report: dict = {
         "profile": args.profile,
+        "verification": args.verification,
         "scratch_root": str(scratch_root),
         "skip_run": bool(args.skip_run),
         "skip_checksum": bool(args.skip_checksum),
@@ -494,9 +593,12 @@ def run_gate(args) -> int:
 
     try:
         # step 0
-        _log(f"loading profile {args.profile!r} and its d9 verification")
+        _log(
+            f"loading profile {args.profile!r} and its "
+            f"{args.verification!r} verification"
+        )
         profile, verification, fixture_dir, manifest = (
-            _load_profile_and_fixture(args.profile)
+            _load_profile_and_fixture(args.profile, args.verification)
         )
         years = list(args.years) if args.years else list(verification["years"])
         report["gate_years"] = years
@@ -527,8 +629,16 @@ def run_gate(args) -> int:
         # step 2
         _log("resolving all catalog-backed inputs for every gate year")
         resolved = _resolution_sweep(paths_mod, years)
-        report["steps"]["resolution"] = {"ok": True, "resolved": resolved}
-        _log(f"resolution ok: {len(resolved)} inputs resolved and present")
+        role_resolved = _role_sweep(profile, years)
+        report["steps"]["resolution"] = {
+            "ok": True,
+            "resolved": resolved,
+            "roles": role_resolved,
+        }
+        _log(
+            f"resolution ok: {len(resolved)} named inputs + "
+            f"{len(role_resolved)} profile roles resolved and present"
+        )
 
         # step 3
         if args.skip_checksum:
@@ -628,7 +738,14 @@ def _get_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--profile",
         default="wave0-gate",
-        help="Profile id carrying the [verification.d9] table.",
+        help="Profile id carrying the [verification.*] tables.",
+    )
+    p.add_argument(
+        "--verification",
+        default="d9",
+        choices=["d9", "d9_full"],
+        help="Which registered golden-diff verification to run: 'd9' (the "
+        "gate years, default) or 'd9_full' (all years 1984-2022).",
     )
     return p
 

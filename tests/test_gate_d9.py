@@ -84,6 +84,8 @@ def _args(**kw):
         argv.append("--skip-checksum")
     if kw.get("report"):
         argv += ["--report", str(kw["report"])]
+    if kw.get("verification"):
+        argv += ["--verification", str(kw["verification"])]
     return gate_d9._get_parser().parse_args(argv)
 
 
@@ -119,7 +121,12 @@ def test_env_is_set_before_paths_import(tmp_path, monkeypatch):
     monkeypatch.setattr(
         gate_d9,
         "_load_profile_and_fixture",
-        lambda pid: ({}, _verification(), tmp_path / "fix", {"outputs": {}}),
+        lambda pid, vname: (
+            {},
+            _verification(),
+            tmp_path / "fix",
+            {"outputs": {}},
+        ),
     )
     monkeypatch.setattr(gate_d9, "_import_paths", fake_import_paths)
 
@@ -234,7 +241,7 @@ def _run_with_fakes(tmp_path, monkeypatch, *, seed_outputs, report=None):
     monkeypatch.setattr(
         gate_d9,
         "_load_profile_and_fixture",
-        lambda pid: ({}, verification, fixture_dir, {"outputs": {}}),
+        lambda pid, vname: ({}, verification, fixture_dir, {"outputs": {}}),
     )
     monkeypatch.setattr(
         gate_d9, "_import_paths", lambda: _fake_paths(tmp_path, [1984])
@@ -305,7 +312,7 @@ def test_dirty_diff_exits_nonzero(tmp_path, monkeypatch):
     monkeypatch.setattr(
         gate_d9,
         "_load_profile_and_fixture",
-        lambda pid: ({}, verification, fixture_dir, {"outputs": {}}),
+        lambda pid, vname: ({}, verification, fixture_dir, {"outputs": {}}),
     )
     monkeypatch.setattr(
         gate_d9, "_import_paths", lambda: _fake_paths(tmp_path, [1984])
@@ -339,7 +346,7 @@ def test_fixture_rot_aborts(tmp_path, monkeypatch):
     monkeypatch.setattr(
         gate_d9,
         "_load_profile_and_fixture",
-        lambda pid: ({}, verification, fixture_dir, manifest),
+        lambda pid, vname: ({}, verification, fixture_dir, manifest),
     )
     # _import_paths should never be reached; make it explode if it is.
     monkeypatch.setattr(
@@ -355,3 +362,207 @@ def test_fixture_rot_aborts(tmp_path, monkeypatch):
         )
     )
     assert rc == 1
+
+
+# ---------------------------------------------------------------------------
+# step 2b: profile [inputs] role sweep
+
+
+def test_role_sweep_static_and_temporal(tmp_path, monkeypatch):
+    from mtbs_fire_analysis.pipeline import catalog_paths as cp
+
+    base = tmp_path / "store"
+    base.mkdir()
+    static_p = base / "eco.gpkg"
+    static_p.write_bytes(b"x")
+
+    def fake_resolve(role, *, year=None):
+        # eco_regions is STATIC: yields one Item with no year.
+        if role == "eco_regions":
+            assert year is None
+            return static_p
+        # mtbs_bs is TEMPORAL: no-year raises (many), per-year resolves.
+        if role == "mtbs_bs":
+            if year is None:
+                raise cp.CatalogResolveError("many items")
+            p = base / f"mtbs_{year}.tif"
+            p.write_bytes(b"x")
+            return p
+        raise KeyError(role)
+
+    monkeypatch.setattr(cp, "resolve", fake_resolve)
+    profile = {"inputs": {"eco_regions": "col-eco", "mtbs_bs": "col-mtbs"}}
+    records = gate_d9._role_sweep(profile, [1984, 2005])
+
+    by_role: dict = {}
+    for r in records:
+        by_role.setdefault(r["role"], []).append(r)
+    assert len(by_role["eco_regions"]) == 1
+    assert by_role["eco_regions"][0]["year"] is None
+    assert by_role["eco_regions"][0]["collection"] == "col-eco"
+    assert {r["year"] for r in by_role["mtbs_bs"]} == {1984, 2005}
+    assert all(r["collection"] == "col-mtbs" for r in by_role["mtbs_bs"])
+    assert all(r["exists"] for r in records)
+
+
+def test_role_sweep_missing_path_aborts(tmp_path, monkeypatch):
+    from mtbs_fire_analysis.pipeline import catalog_paths as cp
+
+    monkeypatch.setattr(
+        cp, "resolve", lambda role, *, year=None: tmp_path / "missing.tif"
+    )
+    profile = {"inputs": {"eco_regions": "col-eco"}}
+    with pytest.raises(gate_d9.GateAbort) as e:
+        gate_d9._role_sweep(profile, [1984])
+    assert e.value.step == "resolution"
+    assert e.value.extra["role"] == "eco_regions"
+
+
+def test_role_sweep_empty_profile_is_noop():
+    assert gate_d9._role_sweep({}, [1984]) == []
+
+
+# ---------------------------------------------------------------------------
+# step 3: checksum assertion golden forms
+
+
+def test_checksum_golden_subtable(tmp_path, monkeypatch):
+    from mtbs_fire_analysis.pipeline import catalog_paths as cp
+
+    resolved_file = tmp_path / "resolved_1985.tif"
+    resolved_file.write_bytes(b"r")
+    golden_dir = tmp_path / "golden_art"
+    golden_dir.mkdir()
+    member = "Annual_NLCD_LndCov_1984_CU_C1V2.tif"
+    (golden_dir / member).write_bytes(b"g")
+
+    class FakeClient:
+        def find(self, collection, *, year=None, include_deprecated=None):
+            if collection == "nlcd-landcover-c1v2":
+                return [{"id": "resolved"}]
+            if collection == "legacy-nlcd":
+                assert include_deprecated is True
+                return [{"id": "golden"}]
+            return []
+
+        def localize(self, item):
+            return resolved_file if item["id"] == "resolved" else golden_dir
+
+    monkeypatch.setattr(cp, "client", lambda: FakeClient())
+    monkeypatch.setattr(gate_d9.comparator, "band_checksum", lambda p: 7)
+
+    verification = {
+        "checksum_assertions": [
+            {
+                "collection": "nlcd-landcover-c1v2",
+                "year": 1984,
+                "golden": {"collection": "legacy-nlcd", "member": member},
+            }
+        ]
+    }
+    records = gate_d9._run_checksum_assertions(verification)
+    assert len(records) == 1
+    assert records[0]["golden_form"] == "golden"
+    assert records[0]["match"] is True
+    assert records[0]["golden_member"].endswith(member)
+
+
+def test_checksum_golden_member_fallback(tmp_path, monkeypatch):
+    from mtbs_fire_analysis.pipeline import catalog_paths as cp
+
+    art = tmp_path / "art"
+    art.mkdir()
+    resolved_file = art / "resolved.tif"
+    resolved_file.write_bytes(b"r")
+    (art / "golden_member.tif").write_bytes(b"g")
+
+    class FakeClient:
+        def find(self, collection, *, year=None, include_deprecated=None):
+            return [{"id": "resolved"}]
+
+        def localize(self, item):
+            return resolved_file
+
+    monkeypatch.setattr(cp, "client", lambda: FakeClient())
+    monkeypatch.setattr(gate_d9.comparator, "band_checksum", lambda p: 5)
+
+    verification = {
+        "checksum_assertions": [
+            {
+                "collection": "legacy-x",
+                "year": 2005,
+                "golden_member": "golden_member.tif",
+            }
+        ]
+    }
+    records = gate_d9._run_checksum_assertions(verification)
+    assert records[0]["golden_form"] == "golden_member"
+    assert records[0]["match"] is True
+
+
+def test_checksum_mismatch_aborts(tmp_path, monkeypatch):
+    from mtbs_fire_analysis.pipeline import catalog_paths as cp
+
+    art = tmp_path / "art"
+    art.mkdir()
+    resolved_file = art / "resolved.tif"
+    resolved_file.write_bytes(b"r")
+    (art / "golden_member.tif").write_bytes(b"g")
+
+    class FakeClient:
+        def find(self, collection, *, year=None, include_deprecated=None):
+            return [{"id": "resolved"}]
+
+        def localize(self, item):
+            return resolved_file
+
+    monkeypatch.setattr(cp, "client", lambda: FakeClient())
+    # resolved vs golden differ by path -> different checksum
+    monkeypatch.setattr(
+        gate_d9.comparator,
+        "band_checksum",
+        lambda p: 1 if str(p).endswith("resolved.tif") else 2,
+    )
+    verification = {
+        "checksum_assertions": [
+            {
+                "collection": "legacy-x",
+                "year": 2005,
+                "golden_member": "golden_member.tif",
+            }
+        ]
+    }
+    with pytest.raises(gate_d9.GateAbort) as e:
+        gate_d9._run_checksum_assertions(verification)
+    assert e.value.step == "checksum"
+
+
+# ---------------------------------------------------------------------------
+# --verification flag selects the registered entry
+
+
+def test_verification_flag_selects_entry(tmp_path, monkeypatch):
+    captured = {}
+
+    def fake_load(pid, vname):
+        captured["vname"] = vname
+        return ({}, _verification(), tmp_path / "fix", {"outputs": {}})
+
+    monkeypatch.setattr(gate_d9, "_load_profile_and_fixture", fake_load)
+    monkeypatch.setattr(
+        gate_d9, "_import_paths", lambda: _fake_paths(tmp_path, [1984])
+    )
+    gate_d9.run_gate(
+        _args(
+            scratch_root=tmp_path / "scratch",
+            skip_run=True,
+            skip_checksum=True,
+            verification="d9_full",
+        )
+    )
+    assert captured["vname"] == "d9_full"
+
+
+def test_verification_flag_defaults_to_d9(tmp_path):
+    args = _args(scratch_root=tmp_path / "s", skip_run=True)
+    assert args.verification == "d9"

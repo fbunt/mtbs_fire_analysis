@@ -27,11 +27,13 @@ uv run ruff format .
 # Rasterization steps are bash + GNU parallel + gdal_rasterize, not Python:
 bash mtbs_fire_analysis/pipeline/m01_rasterize_perims.sh
 
-# Wave-0 D9 gate: run m10 over the gate years through the catalog into a scratch
+# D9 gate: run m10 over the gate years through the catalog into a scratch
 # FIRE_DATA_ROOT and diff each year against the frozen golden (jlab comparator).
 # Smoke it read-only with --skip-run --skip-checksum (fixture hashes + resolution
-# sweep only). The full gate (no flags) takes ~25-40 min. See gate_d9.py.
-uv run python -m mtbs_fire_analysis.gate_d9 --scratch-root <dir> [--skip-run] [--skip-checksum] [--report <path.json>]
+# sweep only; the sweep resolves every profile [inputs] role). --verification
+# selects d9 (gate years, default) or d9_full (all years 1984-2022). The full
+# gate (no flags) takes ~25-40 min. See gate_d9.py.
+uv run python -m mtbs_fire_analysis.gate_d9 --scratch-root <dir> [--skip-run] [--skip-checksum] [--verification d9|d9_full] [--report <path.json>]
 ```
 
 Run the tests with `uv run pytest tests` (the catalog integration suite self-skips unless `JLAB_ROOT` points at a store with an index). There is no CI; also verify pipeline changes by running the relevant stage on a small year range.
@@ -83,10 +85,15 @@ plots `dt` distributions by eco-region and burn severity.
   `get_mtbs_raster_path` / `get_nlcd_raster_path` / `get_wui_flavor_path`) to the jlab client,
   which resolves them from the platform store by `find()`/`localize()` and returns local paths;
   NLCD/WUI temporal substitutions happen inside the client via the loaded profile, not here.
-  The remaining scratch/results/cache surface, including `get_points_path`, stays on the
-  `FIRE_DATA_ROOT` layout. The adapter is enabled by `FIRE_CATALOG` (1/true/on vs 0/false/off);
-  when unset it is on iff `JLAB_ROOT` or `JLAB_API_URL` is set. Resolution is eager at import
-  and fails loudly if the platform is misconfigured (no silent fallback).
+  The adapter carries **no collection literal**: each input is named by a stable INPUT ROLE
+  (`catalog_paths.ROLES`, the 15 roles) and the active profile's `[inputs]` table maps the role
+  to a collection (`jlab.profiles.input_collection`). `FIRE_CATALOG_PROFILE` selects the profile
+  (default `wave0-gate`, the wave-0 imports; `fire` once the wave-1 products exist), so the same
+  code reads either generation. The remaining scratch/results/cache surface, including
+  `get_points_path`, stays on the `FIRE_DATA_ROOT` layout. The adapter is enabled by
+  `FIRE_CATALOG` (1/true/on vs 0/false/off); when unset it is on iff `JLAB_ROOT` or
+  `JLAB_API_URL` is set. Resolution is eager at import and fails loudly if the platform is
+  misconfigured (no silent fallback).
 - **Dask memory is treated as hostile.** Existing code sets `MALLOC_TRIM_THRESHOLD_`, wraps
   raster loads in throwaway fetcher functions so graphs get GC'd, and prefers polars for the
   big joins. Preserve these patterns; don't hold dask graph references in scope after compute.
