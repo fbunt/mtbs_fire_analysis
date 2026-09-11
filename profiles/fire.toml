@@ -260,13 +260,12 @@ oracle_path = "wui/intermediate/wui.gpkg"
 oracle_layer = "wui"
 rule = "exact"
 keys = []
-expected_diff = "Consumer-oracle defect, measured 2026-09-11 (wave-1 S9): the consumer's wui.gpkg carries 58 block geometries larger than 10,000 km2 (max 386,515 km2; e.g. fid 442830 = 107,815 km2), produced by its dask_geopandas partition + make_valid pipeline; the raw FileGDB blocks there are small and valid (e.g. BLK20 280179504011045 = 3.5 km2) and this product reproduces the raw (0 oversized, 0 invalid of 9,158,401 rows). Geometry differs for those blocks only."
 
 [verification.level1.collections.silvis-wui-blocks-bool]
 oracle_path = "wui/intermediate/wui.gpkg"
 oracle_layer = "wui_bool_{year}"
 rule = "exact"
-expected_diff = "Consumer-oracle defect, measured 2026-09-11 (wave-1 S9): the consumer's wui.gpkg carries 58 block geometries larger than 10,000 km2 (max 386,515 km2; e.g. fid 442830 = 107,815 km2), produced by its dask_geopandas partition + make_valid pipeline; the raw FileGDB blocks there are small and valid (e.g. BLK20 280179504011045 = 3.5 km2) and this product reproduces the raw (0 oversized, 0 invalid of 9,158,401 rows). Geometry differs for those blocks only."
+expected_diff = "Consumer-oracle representation difference, measured 2026-09-11 (wave-1 S9): the consumer's per-decade wui_bool layers hold 962,726 / 984,734 / 999,217 / 989,607 rows (1990/2000/2010/2020) against 9,158,401 raw blocks -- its m01 stage wrote partially DISSOLVED unions (58 of them exceed 10,000 km2, max 386,515 km2), while this product keeps one row per raw block (its source layer silvis-wui-blocks is exact against the consumer's wui layer: 9,158,401 rows, 0 attribute, 0 geometry mismatches in file order). Row-wise comparison is therefore not meaningful; the rasterized silvis-wui-bool agrees except 1/0/2/1 overlap pixels."
 
 [verification.level1.collections.silvis-wui-flag]
 oracle_collection = "legacy-wui-flag"
@@ -282,7 +281,7 @@ rule = "exact"
 oracle_collection = "legacy-wui-bool"
 oracle_path = "wui/cleaned/wui_bool_{year}.tif"
 rule = "exact"
-expected_diff = "Consumer-oracle defect, measured 2026-09-11 (wave-1 S9): 1/0/2/1 pixels (decades 1990/2000/2010/2020) where a corrupted oversized 0-valued block in the consumer's wui.gpkg was burned before a small 1-valued block; this product rasterizes the raw-faithful blocks (see silvis-wui-blocks). Everything else pixel-exact."
+expected_diff = "Consumer-oracle representation difference, measured 2026-09-11 (wave-1 S9): 1/0/2/1 pixels (decades 1990/2000/2010/2020) where the consumer's partially dissolved wui_bool union (burned first) and a small 1-valued block disagree at a shared pixel centre; this product rasterizes one row per raw block (see silvis-wui-blocks-bool). Everything else pixel-exact."
 
 [verification.level1.collections.silvis-wui-proximity]
 oracle_collection = "legacy-wui-prox"
