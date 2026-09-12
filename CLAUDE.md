@@ -88,7 +88,7 @@ plots `dt` distributions by eco-region and burn severity.
   The adapter carries **no collection literal**: each input is named by a stable INPUT ROLE
   (`catalog_paths.ROLES`, the 15 roles) and the active profile's `[inputs]` table maps the role
   to a collection (`jlab.profiles.input_collection`). `FIRE_CATALOG_PROFILE` selects the profile
-  (default `wave0-gate`, the wave-0 imports; `fire` once the wave-1 products exist), so the same
+  (default `fire`, the wave-1 products; `wave0-gate`, the wave-0 imports, for regression runs), so the same
   code reads either generation. The remaining scratch/results/cache surface, including
   `get_points_path`, stays on the `FIRE_DATA_ROOT` layout. The adapter is enabled by
   `FIRE_CATALOG` (1/true/on vs 0/false/off); when unset it is on iff `JLAB_ROOT` or

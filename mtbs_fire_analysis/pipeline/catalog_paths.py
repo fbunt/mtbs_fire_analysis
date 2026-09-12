@@ -37,7 +37,9 @@ from pathlib import Path
 
 # Profile that supplies the temporal resolve policies (NLCD floor, WUI
 # buckets) and the role -> collection input bindings this adapter reads.
-PROFILE_ID = os.environ.get("FIRE_CATALOG_PROFILE", "wave0-gate")
+# Default `fire` = the wave-1 products; `wave0-gate` (the wave-0 imports) stays
+# selectable for regression runs.
+PROFILE_ID = os.environ.get("FIRE_CATALOG_PROFILE", "fire")
 
 _WUI_FLAVORS = ("bool", "class", "flag", "prox")
 
