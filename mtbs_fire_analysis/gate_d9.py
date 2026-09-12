@@ -35,7 +35,11 @@ Steps, each logged and recorded in the JSON report:
      included), or beside the resolved path via the wave-0 ``golden_member``.
   4. Unless ``--skip-run``: run ``m10 --clear-cache`` per year in scratch as a
      subprocess and assert each output was freshly produced.
-  5. Diff each year against the fixture; exit 0 iff every year is ``ok``.
+  5. Diff each year against the fixture; a mismatch confined to a column the
+     registry declares in ``expected_diff`` and staying within its
+     ``max_fraction`` is a measured, accepted difference (reported with its
+     count/fraction/reason, never hidden), not a failure. Exit 0 iff every year
+     is ``ok`` on that basis.
   6. ``--skip-run`` diffs whatever already sits under the scratch ``data_tmp``.
 
 The ``-a``/``--all-columns`` decision (step 4): the golden output schema does
@@ -531,7 +535,15 @@ def _diff_all(
 ):
     """Diff each gate year that has scratch output. Returns
     ``(ok, per_year_dict, message)``. With no outputs present the message is
-    the explicit smoke-run outcome and ``ok`` is False."""
+    the explicit smoke-run outcome and ``ok`` is False.
+
+    The registry's optional ``expected_diff`` table (``{column: {reason,
+    max_fraction}}``) records measured, accepted per-column differences. A year
+    whose only mismatches are expected columns within their bound is OK; the
+    per-year record still carries the raw comparator ``per_column_mismatch``
+    plus the ``expected`` and ``unexpected`` column splits
+    (count/fraction/reason), and ``strict_ok`` (the comparator's exact verdict)
+    beside the effective ``ok``."""
     present = [
         y
         for y in years
@@ -545,6 +557,7 @@ def _diff_all(
             f"no outputs to diff under {data_tmp}; run the gate without "
             "--skip-run to produce them first",
         )
+    expected_diff = verification.get("expected_diff", {})
     diff_years = present if skip_run else years
     per_year = {}
     ok = True
@@ -559,9 +572,35 @@ def _diff_all(
             _log(f"diff {year}: FAIL (no output)")
             continue
         report = _diff_year(scratch_root, fixture_dir, verification, year)
-        per_year[str(year)] = report.to_dict()
-        ok = ok and report.ok
-        _log(f"diff {year}: {report.summary()}")
+        classified = comparator.classify_mismatches(
+            report, expected_diff, report.rows_expected
+        )
+        year_expected = {c: r for c, r in classified.items() if r["expected"]}
+        year_unexpected = {
+            c: r for c, r in classified.items() if not r["expected"]
+        }
+        year_ok = (
+            report.rows_actual == report.rows_expected
+            and not report.missing_columns
+            and not report.extra_columns
+            and not year_unexpected
+        )
+        rec = report.to_dict()
+        rec["strict_ok"] = report.ok
+        rec["ok"] = year_ok
+        rec["expected"] = year_expected
+        rec["unexpected"] = year_unexpected
+        per_year[str(year)] = rec
+        ok = ok and year_ok
+        if year_ok and year_expected:
+            detail = ", ".join(
+                f"{c}={r['count']} rows, {r['fraction'] * 100:.2f}%, "
+                f"{r['reason']}"
+                for c, r in year_expected.items()
+            )
+            _log(f"diff {year}: OK (expected: {detail})")
+        else:
+            _log(f"diff {year}: {report.summary()}")
         # Drop the year's tables before the next (one pair in RAM at a time).
         del report
     return (

@@ -329,6 +329,107 @@ def test_dirty_diff_exits_nonzero(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# step 5: expected_diff classification in the diff step
+
+
+def _seed_diff_pair(tmp_path, actual_tbl, golden_tbl, year=1984):
+    """Seed a scratch output and a fixture golden for one year; return
+    (scratch_root, fixture_dir)."""
+    scratch = tmp_path / "scratch"
+    fixture = tmp_path / "fixture"
+    _write_parquet(
+        scratch / "data_tmp" / f"mtbs_CONUS_{year}" / "part.0.parquet",
+        actual_tbl,
+    )
+    _write_parquet(
+        fixture / "outputs" / f"mtbs_CONUS_{year}" / "part.0.parquet",
+        golden_tbl,
+    )
+    return scratch, fixture
+
+
+def test_diff_all_expected_column_within_bound_is_ok(tmp_path):
+    v = _verification()
+    v["expected_diff"] = {
+        "nlcd_mode": {
+            "reason": "known 1985 double-count",
+            "max_fraction": 0.5,
+        }
+    }
+    # k/lon match; nlcd_mode differs on 1 of 4 rows (0.25 <= 0.5).
+    actual = pa.table(
+        {
+            "k": [1, 2, 3, 4],
+            "lon": [1.0, 2.0, 3.0, 4.0],
+            "nlcd_mode": [10, 20, 30, 99],
+        }
+    )
+    golden = pa.table(
+        {
+            "k": [1, 2, 3, 4],
+            "lon": [1.0, 2.0, 3.0, 4.0],
+            "nlcd_mode": [10, 20, 30, 40],
+        }
+    )
+    scratch, fixture = _seed_diff_pair(tmp_path, actual, golden)
+    ok, per_year, _msg = gate_d9._diff_all(
+        scratch, fixture, v, [1984], skip_run=True
+    )
+    assert ok is True
+    y = per_year["1984"]
+    assert y["ok"] is True
+    assert y["strict_ok"] is False  # the comparator sees a raw mismatch
+    assert "nlcd_mode" in y["expected"]
+    assert y["expected"]["nlcd_mode"]["count"] == 1
+    assert y["expected"]["nlcd_mode"]["fraction"] == 0.25
+    assert y["expected"]["nlcd_mode"]["reason"] == "known 1985 double-count"
+    assert y["unexpected"] == {}
+
+
+def test_diff_all_expected_column_over_bound_fails(tmp_path):
+    v = _verification()
+    v["expected_diff"] = {
+        "nlcd_mode": {"reason": "known", "max_fraction": 0.1}
+    }
+    # nlcd_mode differs on 2 of 4 rows (0.5 > 0.1) -> unexpected -> FAIL.
+    actual = pa.table(
+        {
+            "k": [1, 2, 3, 4],
+            "lon": [1.0, 2.0, 3.0, 4.0],
+            "nlcd_mode": [99, 99, 30, 40],
+        }
+    )
+    golden = pa.table(
+        {
+            "k": [1, 2, 3, 4],
+            "lon": [1.0, 2.0, 3.0, 4.0],
+            "nlcd_mode": [10, 20, 30, 40],
+        }
+    )
+    scratch, fixture = _seed_diff_pair(tmp_path, actual, golden)
+    ok, per_year, _msg = gate_d9._diff_all(
+        scratch, fixture, v, [1984], skip_run=True
+    )
+    assert ok is False
+    y = per_year["1984"]
+    assert y["ok"] is False
+    assert "nlcd_mode" in y["unexpected"]
+    assert y["expected"] == {}
+
+
+def test_diff_all_undeclared_mismatch_fails(tmp_path):
+    v = _verification()  # no expected_diff at all
+    actual = pa.table({"k": [1, 2], "lon": [1.0, 2.0], "nlcd_mode": [99, 20]})
+    golden = pa.table({"k": [1, 2], "lon": [1.0, 2.0], "nlcd_mode": [10, 20]})
+    scratch, fixture = _seed_diff_pair(tmp_path, actual, golden)
+    ok, per_year, _msg = gate_d9._diff_all(
+        scratch, fixture, v, [1984], skip_run=True
+    )
+    assert ok is False
+    assert "nlcd_mode" in per_year["1984"]["unexpected"]
+
+
+# ---------------------------------------------------------------------------
 # fixture-rot abort
 
 

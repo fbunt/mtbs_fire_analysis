@@ -129,6 +129,18 @@ output_dir_pattern = "mtbs_CONUS_{year}"
 lon = 1e-4
 lat = 1e-4
 
+# A measured, accepted per-column difference (spec section 8), mirroring the
+# level-1 expected_diff on nlcd-landcover-mode-1985-2022 above. The legacy NLCD
+# mode raster double-counted 1985 (it stacked a 1984 copy of the 1985 raster);
+# the wave-1 mode product reduces 1985-2022 once, so the level-1 gate measured
+# 19,091,590 CONUS pixels (0.12%) with a different modal class. m10's nlcd_mode
+# column inherits that at ~0.1-0.5% of rows per gate year (measured 0.47% for
+# 1984, 0.14% for 2005). max_fraction = 0.01 leaves margin over the measured
+# peak while still catching a real regression.
+[verification.d9.expected_diff.nlcd_mode]
+reason = "the legacy NLCD mode raster double-counted 1985 via a 1984 copy of the 1985 raster; the wave-1 nlcd-landcover-mode-1985-2022 reduces 1985-2022 once, so ~0.12% of CONUS pixels (level-1 measured 19,091,590 px) carry a different modal class and m10's nlcd_mode column inherits it -- a measured, accepted difference (spec section 8)"
+max_fraction = 0.01
+
 # Pre-diff pixel-identity assertion (spec section 8 Risk 1). Under one-Item-per-
 # artifact the wave-1 1985 artifact holds only its 1985 member, so the golden
 # byte is looked up THROUGH THE CLIENT with deprecated Items included (collection
@@ -158,6 +170,13 @@ output_dir_pattern = "mtbs_CONUS_{year}"
 [verification.d9_full.atol]
 lon = 1e-4
 lat = 1e-4
+
+# Same measured, accepted nlcd_mode difference as [verification.d9] above (the
+# legacy mode's dropped 1985 double-count); it applies to every year the full
+# diff covers, not just the four gate years.
+[verification.d9_full.expected_diff.nlcd_mode]
+reason = "the legacy NLCD mode raster double-counted 1985 via a 1984 copy of the 1985 raster; the wave-1 nlcd-landcover-mode-1985-2022 reduces 1985-2022 once, so ~0.12% of CONUS pixels (level-1 measured 19,091,590 px) carry a different modal class and m10's nlcd_mode column inherits it -- a measured, accepted difference (spec section 8)"
+max_fraction = 0.01
 
 [[verification.d9_full.checksum_assertions]]
 collection = "nlcd-landcover-c1v2"

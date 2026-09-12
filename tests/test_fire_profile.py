@@ -87,3 +87,18 @@ def test_input_collection_accessor(profile: dict) -> None:
     )
     with pytest.raises(profiles.ProfileError):
         profiles.input_collection(profile, "no-such-role")
+
+
+def test_d9_carries_nlcd_mode_expected_diff(profile: dict) -> None:
+    # Both golden-diff entries declare the mode's measured, accepted per-column
+    # difference on the nlcd_mode column (the legacy mode's dropped 1985
+    # double-count); the D9 gate treats it as pass-within-bound, not a FAIL.
+    for name in ("d9", "d9_full"):
+        v = profiles.verification_for(profile, name)
+        assert v["kind"] == "golden-diff"
+        ed = v.get("expected_diff", {})
+        assert "nlcd_mode" in ed, f"{name} missing nlcd_mode expected_diff"
+        spec = ed["nlcd_mode"]
+        assert isinstance(spec["reason"], str) and spec["reason"]
+        assert 0 < spec["max_fraction"] <= 1
+        assert "1985" in spec["reason"]
