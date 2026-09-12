@@ -134,12 +134,14 @@ lat = 1e-4
 # mode raster double-counted 1985 (it stacked a 1984 copy of the 1985 raster);
 # the wave-1 mode product reduces 1985-2022 once, so the level-1 gate measured
 # 19,091,590 CONUS pixels (0.12%) with a different modal class. m10's nlcd_mode
-# column inherits that at ~0.1-0.5% of rows per gate year (measured 0.47% for
-# 1984, 0.14% for 2005). max_fraction = 0.01 leaves margin over the measured
-# peak while still catching a real regression.
+# column inherits it at a fraction that depends on where that year's fires fell:
+# the full 39-year D9 run (2026-09-12) measured 0.14% (2019) to 1.62% (1988) of
+# rows per year, median ~0.25%, with 1988 / 2000 / 2002 above 1%. max_fraction =
+# 0.03 leaves margin over the measured peak while still catching a real
+# regression (a wrong mode would mismatch tens of percent of rows).
 [verification.d9.expected_diff.nlcd_mode]
 reason = "the legacy NLCD mode raster double-counted 1985 via a 1984 copy of the 1985 raster; the wave-1 nlcd-landcover-mode-1985-2022 reduces 1985-2022 once, so ~0.12% of CONUS pixels (level-1 measured 19,091,590 px) carry a different modal class and m10's nlcd_mode column inherits it -- a measured, accepted difference (spec section 8)"
-max_fraction = 0.01
+max_fraction = 0.03
 
 # Pre-diff pixel-identity assertion (spec section 8 Risk 1). Under one-Item-per-
 # artifact the wave-1 1985 artifact holds only its 1985 member, so the golden
@@ -176,7 +178,7 @@ lat = 1e-4
 # diff covers, not just the four gate years.
 [verification.d9_full.expected_diff.nlcd_mode]
 reason = "the legacy NLCD mode raster double-counted 1985 via a 1984 copy of the 1985 raster; the wave-1 nlcd-landcover-mode-1985-2022 reduces 1985-2022 once, so ~0.12% of CONUS pixels (level-1 measured 19,091,590 px) carry a different modal class and m10's nlcd_mode column inherits it -- a measured, accepted difference (spec section 8)"
-max_fraction = 0.01
+max_fraction = 0.03
 
 [[verification.d9_full.checksum_assertions]]
 collection = "nlcd-landcover-c1v2"
