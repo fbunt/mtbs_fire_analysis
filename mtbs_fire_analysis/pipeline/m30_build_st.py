@@ -19,23 +19,6 @@ def _get_dse_max_path(end_year):
     return PERIMS_RASTERS_PATH / f"dse_max_{end_year}.tif"
 
 
-def build_st(end_year, start_year=1984):
-    raster = rts.Raster(_get_dse_max_path(end_year - 1))
-    data = raster.data
-    data = data.map_blocks(
-        st_chunk,
-        dtype="float32",
-        meta=np.array((), dtype="float32"),
-        start_year=start_year,
-        end_year=end_year,
-        nodata=raster.null_value,
-    )
-    st = rts.data_to_raster_like(data, like=raster, nv=None)
-    path = f"st/st_{end_year}.tif"
-    print(f"Saving to {path}")
-    protected_raster_save_with_cleanup(st, path, skip_if_exists=False)
-
-
 def stack_dse_years_as_vrt(start_year, end_year):
     # end_year is inclusive here.
     paths = [
