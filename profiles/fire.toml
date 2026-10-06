@@ -84,6 +84,63 @@ kind = "bucket-select"
 buckets = [1990, 2000, 2010, 2020]
 clamp_low = true
 
+[policies."raw-wui-blocks-v4"]
+# The raw v4 blocks carry every decade's attributes in one Item whose temporal
+# key is the true 1990-2020 coverage (platform decision 0015), not the 1984-2022
+# analysis window. Same decade bucketing as the silvis-wui-* products: a year
+# below 1990 clamps to 1990, 2021-2022 select 2020.
+kind = "bucket-select"
+buckets = [1990, 2000, 2010, 2020]
+clamp_low = true
+
+# Static inputs (platform decision 0015). Each Item's temporal key is its own
+# vintage or coverage (EDNA 2003, ecoregions 2010, states 2018, hex grid 2025;
+# the NLCD mode reduces 1985-2022), no longer the 1984-2022 analysis window.
+# This analysis uses each of them for EVERY analysis year, so a year request is
+# ignored and the collection's Item is served. Exact ids, not globs, so a future
+# new vintage of one of these collections is not silently made time-invariant.
+[policies."epa-ecoregions"]
+kind = "time-invariant"
+
+[policies."epa-ecoregions-l1-raster"]
+kind = "time-invariant"
+
+[policies."epa-ecoregions-l2-raster"]
+kind = "time-invariant"
+
+[policies."epa-ecoregions-l3-raster"]
+kind = "time-invariant"
+
+[policies."hex-grid"]
+kind = "time-invariant"
+
+[policies."us-states-with-aggregates"]
+kind = "time-invariant"
+
+[policies."nlcd-landcover-mode-1985-2022"]
+kind = "time-invariant"
+
+[policies."edna-elevation"]
+kind = "time-invariant"
+
+[policies."edna-slope"]
+kind = "time-invariant"
+
+[policies."edna-aspect"]
+kind = "time-invariant"
+
+[policies."raw-ecoregions-l3"]
+kind = "time-invariant"
+
+[policies."raw-hex-grid"]
+kind = "time-invariant"
+
+[policies."raw-census-states-2018"]
+kind = "time-invariant"
+
+[policies."raw-edna-dem"]
+kind = "time-invariant"
+
 # Role -> collection input bindings (spec section 7). The consumer adapter (S8)
 # looks a role up here and carries NO collection literal in its code. Every value
 # must be a selected collection.
