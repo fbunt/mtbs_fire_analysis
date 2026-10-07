@@ -346,7 +346,7 @@ def _build_dataframe_and_save(
     # Convert to dask dataframe for saving in parallel
     nparts = max(int(np.round(n / TARGET_POINTS_PER_PARTITION)), 1)
     points = dd.from_pandas(points, npartitions=nparts)
-    points.to_parquet(out_path)
+    points.to_parquet(out_path, write_index=False)
 
 
 def save_raster_to_points(years, crs, drop_extra_cols):
