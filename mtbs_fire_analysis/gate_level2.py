@@ -32,8 +32,8 @@ Steps, each logged and recorded in the JSON report:
      temporal per gate year).
   3. Run the registry's ``checksum_assertions`` (GDAL band checksums). Each
      asserts the resolved ``(collection, year)`` item against a golden byte
-     located through the client from the ``golden`` sub-table (deprecated
-     included), or beside the resolved path via the wave-0 ``golden_member``.
+     located through the client from the entry's ``golden`` sub-table
+     (deprecated included); an entry without one aborts.
   4. Unless ``--skip-run``: run ``m10 --clear-cache`` per year in scratch as a
      subprocess and assert each output was freshly produced.
   5. Diff each year against the fixture; a mismatch confined to a column the
@@ -328,36 +328,28 @@ def _localize_one(cli, collection, *, year=None, include_deprecated=None):
     return Path(cli.localize(items[0]))
 
 
-def _golden_path(cli, entry, resolved):
-    """Locate the golden byte for a checksum assertion. Returns
-    ``(golden_path, form)``. Prefers the wave-1 ``golden`` sub-table (looked up
-    through the client with deprecated Items included); falls back to the
-    wave-0 ``golden_member`` form (a file beside the resolved path)."""
-    golden_spec = entry.get("golden")
-    if golden_spec is not None:
-        g_col = golden_spec["collection"]
-        g_year = golden_spec.get("year", entry["year"])
-        g_member = golden_spec["member"]
-        g_local = _localize_one(
-            cli, g_col, year=g_year, include_deprecated=True
-        )
-        if g_local.name == g_member:
-            golden = g_local
-        else:
-            art_dir = g_local if g_local.is_dir() else g_local.parent
-            golden = art_dir / g_member
-        return golden, "golden"
-    member = entry["golden_member"]
-    return resolved.parent / member, "golden_member"
+def _golden_path(cli, golden_spec, year):
+    """Locate the golden byte for a checksum assertion from its ``golden``
+    sub-table: ``collection`` and ``year`` (default: the assertion's year)
+    are looked up through the client with deprecated Items included, and
+    ``member`` names the file inside that Item's artifact."""
+    g_col = golden_spec["collection"]
+    g_year = golden_spec.get("year", year)
+    g_member = golden_spec["member"]
+    g_local = _localize_one(cli, g_col, year=g_year, include_deprecated=True)
+    if g_local.name == g_member:
+        return g_local
+    art_dir = g_local if g_local.is_dir() else g_local.parent
+    return art_dir / g_member
 
 
 def _run_checksum_assertions(verification):
     """Run the registry's band-checksum assertions: the item the profile
     resolves for ``(collection, year)`` must have the same GDAL band checksum
-    as the golden byte. The golden is located from the ``golden`` sub-table
-    (looked up through the client) or the wave-0 ``golden_member`` form (a file
-    beside the resolved path). Returns the list of records; raises
-    ``GateAbort`` on a mismatch."""
+    as the golden byte, located through the client from the entry's
+    ``golden`` sub-table. Returns the list of records; raises ``GateAbort``
+    on an entry without a ``golden`` sub-table, a missing golden byte or a
+    mismatch."""
     from mtbs_fire_analysis.pipeline import catalog_paths
 
     cli = catalog_paths.client()
@@ -365,13 +357,22 @@ def _run_checksum_assertions(verification):
     for entry in verification.get("checksum_assertions", []):
         collection = entry["collection"]
         year = entry["year"]
+        golden_spec = entry.get("golden")
+        if golden_spec is None:
+            raise GateAbort(
+                "checksum",
+                f"checksum assertion for {collection} year={year} has no "
+                "golden sub-table; declare golden = { collection = ..., "
+                "member = ... } (optional year)",
+                collection=collection,
+                year=year,
+            )
         resolved = _localize_one(cli, collection, year=year)
-        golden, form = _golden_path(cli, entry, resolved)
+        golden = _golden_path(cli, golden_spec, year)
         if not golden.is_file():
             raise GateAbort(
                 "checksum",
-                f"golden byte {golden} (form {form}) not found for "
-                f"{collection} year={year}",
+                f"golden byte {golden} not found for {collection} year={year}",
                 collection=collection,
                 year=year,
             )
@@ -381,15 +382,14 @@ def _run_checksum_assertions(verification):
             "collection": collection,
             "year": year,
             "resolved": str(resolved),
-            "golden_member": str(golden),
-            "golden_form": form,
+            "golden": str(golden),
             "checksum_resolved": cs_resolved,
             "checksum_golden": cs_golden,
             "match": cs_resolved == cs_golden,
         }
         records.append(rec)
         _log(
-            f"checksum {collection} year={year} ({form}): "
+            f"checksum {collection} year={year}: "
             f"resolved={cs_resolved} golden={cs_golden} -> "
             f"{'OK' if rec['match'] else 'MISMATCH'}"
         )

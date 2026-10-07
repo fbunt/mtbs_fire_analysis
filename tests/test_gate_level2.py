@@ -525,7 +525,7 @@ def test_role_sweep_empty_profile_is_noop():
 
 
 # ---------------------------------------------------------------------------
-# step 3: checksum assertion golden forms
+# step 3: checksum assertions
 
 
 def test_checksum_golden_subtable(tmp_path, monkeypatch):
@@ -564,59 +564,25 @@ def test_checksum_golden_subtable(tmp_path, monkeypatch):
     }
     records = gate_level2._run_checksum_assertions(verification)
     assert len(records) == 1
-    assert records[0]["golden_form"] == "golden"
     assert records[0]["match"] is True
-    assert records[0]["golden_member"].endswith(member)
-
-
-def test_checksum_golden_member_fallback(tmp_path, monkeypatch):
-    from mtbs_fire_analysis.pipeline import catalog_paths as cp
-
-    art = tmp_path / "art"
-    art.mkdir()
-    resolved_file = art / "resolved.tif"
-    resolved_file.write_bytes(b"r")
-    (art / "golden_member.tif").write_bytes(b"g")
-
-    class FakeClient:
-        def find(self, collection, *, year=None, include_deprecated=None):
-            return [{"id": "resolved"}]
-
-        def localize(self, item):
-            return resolved_file
-
-    monkeypatch.setattr(cp, "client", lambda: FakeClient())
-    monkeypatch.setattr(gate_level2.comparator, "band_checksum", lambda p: 5)
-
-    verification = {
-        "checksum_assertions": [
-            {
-                "collection": "legacy-x",
-                "year": 2005,
-                "golden_member": "golden_member.tif",
-            }
-        ]
-    }
-    records = gate_level2._run_checksum_assertions(verification)
-    assert records[0]["golden_form"] == "golden_member"
-    assert records[0]["match"] is True
+    assert records[0]["golden"].endswith(member)
 
 
 def test_checksum_mismatch_aborts(tmp_path, monkeypatch):
     from mtbs_fire_analysis.pipeline import catalog_paths as cp
 
-    art = tmp_path / "art"
-    art.mkdir()
-    resolved_file = art / "resolved.tif"
+    resolved_file = tmp_path / "resolved.tif"
     resolved_file.write_bytes(b"r")
-    (art / "golden_member.tif").write_bytes(b"g")
+    golden_dir = tmp_path / "golden_art"
+    golden_dir.mkdir()
+    (golden_dir / "golden.tif").write_bytes(b"g")
 
     class FakeClient:
         def find(self, collection, *, year=None, include_deprecated=None):
-            return [{"id": "resolved"}]
+            return [{"id": collection}]
 
         def localize(self, item):
-            return resolved_file
+            return resolved_file if item["id"] == "x" else golden_dir
 
     monkeypatch.setattr(cp, "client", lambda: FakeClient())
     # resolved vs golden differ by path -> different checksum
@@ -628,15 +594,31 @@ def test_checksum_mismatch_aborts(tmp_path, monkeypatch):
     verification = {
         "checksum_assertions": [
             {
-                "collection": "legacy-x",
+                "collection": "x",
                 "year": 2005,
-                "golden_member": "golden_member.tif",
+                "golden": {"collection": "legacy-x", "member": "golden.tif"},
             }
         ]
     }
     with pytest.raises(gate_level2.GateAbort) as e:
         gate_level2._run_checksum_assertions(verification)
     assert e.value.step == "checksum"
+
+
+def test_checksum_entry_without_golden_subtable_aborts(monkeypatch):
+    from mtbs_fire_analysis.pipeline import catalog_paths as cp
+
+    class FakeClient:
+        def find(self, collection, *, year=None, include_deprecated=None):
+            raise AssertionError("must abort before any lookup")
+
+    monkeypatch.setattr(cp, "client", lambda: FakeClient())
+    verification = {"checksum_assertions": [{"collection": "x", "year": 2005}]}
+    with pytest.raises(gate_level2.GateAbort) as e:
+        gate_level2._run_checksum_assertions(verification)
+    assert e.value.step == "checksum"
+    assert "no golden sub-table" in str(e.value)
+    assert e.value.extra["collection"] == "x"
 
 
 # ---------------------------------------------------------------------------
