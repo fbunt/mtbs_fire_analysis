@@ -1,4 +1,4 @@
-"""Unit tests for the D9 gate harness (mtbs_fire_analysis.gate_d9).
+"""Unit tests for the level-2 gate harness (mtbs_fire_analysis.gate_level2).
 
 All pieces are faked/mocked: no m10 run, no store reads or writes. The real
 comparator (jlab.comparator) diffs tiny synthetic parquet under tmp_path so the
@@ -13,12 +13,13 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from mtbs_fire_analysis import gate_d9
+from mtbs_fire_analysis import gate_level2
 
 
 @pytest.fixture(autouse=True)
 def _env_guard():
-    """Restore os.environ around each test (gate_d9 mutates it directly)."""
+    """Restore os.environ around each test (gate_level2 mutates it
+    directly)."""
     saved = dict(os.environ)
     yield
     os.environ.clear()
@@ -86,7 +87,7 @@ def _args(**kw):
         argv += ["--report", str(kw["report"])]
     if kw.get("verification"):
         argv += ["--verification", str(kw["verification"])]
-    return gate_d9._get_parser().parse_args(argv)
+    return gate_level2._get_parser().parse_args(argv)
 
 
 # ---------------------------------------------------------------------------
@@ -94,7 +95,7 @@ def _args(**kw):
 
 
 def test_setup_environment_creates_layout_and_sets_env(tmp_path):
-    env = gate_d9._setup_environment(tmp_path / "scratch", "wave0-gate")
+    env = gate_level2._setup_environment(tmp_path / "scratch", "wave0-gate")
     scratch = tmp_path / "scratch"
     for sub in ("data", "data_tmp", "logs", "cache"):
         assert (scratch / sub).is_dir()
@@ -119,7 +120,7 @@ def test_env_is_set_before_paths_import(tmp_path, monkeypatch):
         return _fake_paths(tmp_path, [1984])
 
     monkeypatch.setattr(
-        gate_d9,
+        gate_level2,
         "_load_profile_and_fixture",
         lambda pid, vname: (
             {},
@@ -128,10 +129,10 @@ def test_env_is_set_before_paths_import(tmp_path, monkeypatch):
             {"outputs": {}},
         ),
     )
-    monkeypatch.setattr(gate_d9, "_import_paths", fake_import_paths)
+    monkeypatch.setattr(gate_level2, "_import_paths", fake_import_paths)
 
     scratch = tmp_path / "scratch"
-    rc = gate_d9.run_gate(
+    rc = gate_level2.run_gate(
         _args(scratch_root=scratch, skip_run=True, skip_checksum=True)
     )
     assert seen["FIRE_DATA_ROOT"] == str(scratch.resolve())
@@ -144,7 +145,7 @@ def test_env_is_set_before_paths_import(tmp_path, monkeypatch):
 
 def test_resolution_sweep_ok(tmp_path):
     paths = _fake_paths(tmp_path, [1984, 2005])
-    resolved = gate_d9._resolution_sweep(paths, [1984, 2005])
+    resolved = gate_level2._resolution_sweep(paths, [1984, 2005])
     names = {r["name"] for r in resolved}
     assert "ASPECT_PATH" in names and "get_mtbs_raster_path" in names
     assert "dse" in names
@@ -155,8 +156,8 @@ def test_resolution_sweep_missing_aborts_with_name_year(tmp_path):
     paths = _fake_paths(tmp_path, [1984])
     # break MTBS for the year: return a path that does not exist
     paths.get_mtbs_raster_path = lambda y, aoi: tmp_path / f"missing_{y}.tif"
-    with pytest.raises(gate_d9.GateAbort) as e:
-        gate_d9._resolution_sweep(paths, [1984])
+    with pytest.raises(gate_level2.GateAbort) as e:
+        gate_level2._resolution_sweep(paths, [1984])
     assert e.value.step == "resolution"
     assert e.value.extra["name"] == "get_mtbs_raster_path"
     assert e.value.extra["year"] == 1984
@@ -172,26 +173,26 @@ def test_clean_output_dir_removes_preexisting(tmp_path):
     out = tmp_path / "data_tmp" / "mtbs_CONUS_1984"
     out.mkdir(parents=True)
     (out / "part.0.parquet").write_bytes(b"stale")
-    gate_d9._clean_output_dir(out)
+    gate_level2._clean_output_dir(out)
     assert not out.exists()
     # a non-existent dir is a no-op
-    gate_d9._clean_output_dir(tmp_path / "data_tmp" / "mtbs_CONUS_2005")
+    gate_level2._clean_output_dir(tmp_path / "data_tmp" / "mtbs_CONUS_2005")
 
 
 def test_assert_produced_requires_parquet_and_fresh_mtime(tmp_path):
     out = tmp_path / "mtbs_CONUS_1984"
     out.mkdir()
     # no parquet -> abort
-    with pytest.raises(gate_d9.GateAbort):
-        gate_d9._assert_produced(out, t0=0.0)
+    with pytest.raises(gate_level2.GateAbort):
+        gate_level2._assert_produced(out, t0=0.0)
     # a parquet, but mtime older than t0 -> abort (not freshly produced)
     _write_parquet(out / "part.0.parquet", pa.table({"k": [1]}))
     import time
 
-    with pytest.raises(gate_d9.GateAbort):
-        gate_d9._assert_produced(out, t0=time.time() + 60)
+    with pytest.raises(gate_level2.GateAbort):
+        gate_level2._assert_produced(out, t0=time.time() + 60)
     # a parquet newer than t0 -> ok
-    gate_d9._assert_produced(out, t0=0.0)
+    gate_level2._assert_produced(out, t0=0.0)
 
 
 def test_run_m10_years_clears_stale_and_rebuilds(tmp_path, monkeypatch):
@@ -215,8 +216,8 @@ def test_run_m10_years_clears_stale_and_rebuilds(tmp_path, monkeypatch):
         os.utime(out, (future, future))
         return 0
 
-    monkeypatch.setattr(gate_d9, "_run_m10_subprocess", fake_subprocess)
-    records = gate_d9._run_m10_years(scratch, _verification(), [1984])
+    monkeypatch.setattr(gate_level2, "_run_m10_subprocess", fake_subprocess)
+    records = gate_level2._run_m10_years(scratch, _verification(), [1984])
     assert records["1984"]["parts"] == 1
     # the stale-only part is gone (dir was wiped before the rebuild)
     assert not (out / "stale-only.parquet").exists()
@@ -239,12 +240,12 @@ def _run_with_fakes(tmp_path, monkeypatch, *, seed_outputs, report=None):
     )
 
     monkeypatch.setattr(
-        gate_d9,
+        gate_level2,
         "_load_profile_and_fixture",
         lambda pid, vname: ({}, verification, fixture_dir, {"outputs": {}}),
     )
     monkeypatch.setattr(
-        gate_d9, "_import_paths", lambda: _fake_paths(tmp_path, [1984])
+        gate_level2, "_import_paths", lambda: _fake_paths(tmp_path, [1984])
     )
 
     scratch = tmp_path / "scratch"
@@ -256,7 +257,7 @@ def _run_with_fakes(tmp_path, monkeypatch, *, seed_outputs, report=None):
         _write_parquet(
             scratch / "data_tmp" / "mtbs_CONUS_1984" / "part.0.parquet", actual
         )
-    return gate_d9.run_gate(
+    return gate_level2.run_gate(
         _args(
             scratch_root=scratch,
             skip_run=True,
@@ -310,19 +311,19 @@ def test_dirty_diff_exits_nonzero(tmp_path, monkeypatch):
         fixture_dir / "outputs" / "mtbs_CONUS_1984" / "part.0.parquet", golden
     )
     monkeypatch.setattr(
-        gate_d9,
+        gate_level2,
         "_load_profile_and_fixture",
         lambda pid, vname: ({}, verification, fixture_dir, {"outputs": {}}),
     )
     monkeypatch.setattr(
-        gate_d9, "_import_paths", lambda: _fake_paths(tmp_path, [1984])
+        gate_level2, "_import_paths", lambda: _fake_paths(tmp_path, [1984])
     )
     scratch = tmp_path / "scratch"
     dirty = pa.table({"k": [1, 2], "v": [10, 99], "lon": [1.0, 2.0]})
     _write_parquet(
         scratch / "data_tmp" / "mtbs_CONUS_1984" / "part.0.parquet", dirty
     )
-    rc = gate_d9.run_gate(
+    rc = gate_level2.run_gate(
         _args(scratch_root=scratch, skip_run=True, skip_checksum=True)
     )
     assert rc == 1
@@ -372,7 +373,7 @@ def test_diff_all_expected_column_within_bound_is_ok(tmp_path):
         }
     )
     scratch, fixture = _seed_diff_pair(tmp_path, actual, golden)
-    ok, per_year, _msg = gate_d9._diff_all(
+    ok, per_year, _msg = gate_level2._diff_all(
         scratch, fixture, v, [1984], skip_run=True
     )
     assert ok is True
@@ -407,7 +408,7 @@ def test_diff_all_expected_column_over_bound_fails(tmp_path):
         }
     )
     scratch, fixture = _seed_diff_pair(tmp_path, actual, golden)
-    ok, per_year, _msg = gate_d9._diff_all(
+    ok, per_year, _msg = gate_level2._diff_all(
         scratch, fixture, v, [1984], skip_run=True
     )
     assert ok is False
@@ -422,7 +423,7 @@ def test_diff_all_undeclared_mismatch_fails(tmp_path):
     actual = pa.table({"k": [1, 2], "lon": [1.0, 2.0], "nlcd_mode": [99, 20]})
     golden = pa.table({"k": [1, 2], "lon": [1.0, 2.0], "nlcd_mode": [10, 20]})
     scratch, fixture = _seed_diff_pair(tmp_path, actual, golden)
-    ok, per_year, _msg = gate_d9._diff_all(
+    ok, per_year, _msg = gate_level2._diff_all(
         scratch, fixture, v, [1984], skip_run=True
     )
     assert ok is False
@@ -445,17 +446,17 @@ def test_fixture_rot_aborts(tmp_path, monkeypatch):
         }
     }
     monkeypatch.setattr(
-        gate_d9,
+        gate_level2,
         "_load_profile_and_fixture",
         lambda pid, vname: ({}, verification, fixture_dir, manifest),
     )
     # _import_paths should never be reached; make it explode if it is.
     monkeypatch.setattr(
-        gate_d9,
+        gate_level2,
         "_import_paths",
         lambda: (_ for _ in ()).throw(AssertionError("reached import")),
     )
-    rc = gate_d9.run_gate(
+    rc = gate_level2.run_gate(
         _args(
             scratch_root=tmp_path / "scratch",
             skip_run=True,
@@ -493,7 +494,7 @@ def test_role_sweep_static_and_temporal(tmp_path, monkeypatch):
 
     monkeypatch.setattr(cp, "resolve", fake_resolve)
     profile = {"inputs": {"eco_regions": "col-eco", "mtbs_bs": "col-mtbs"}}
-    records = gate_d9._role_sweep(profile, [1984, 2005])
+    records = gate_level2._role_sweep(profile, [1984, 2005])
 
     by_role: dict = {}
     for r in records:
@@ -513,14 +514,14 @@ def test_role_sweep_missing_path_aborts(tmp_path, monkeypatch):
         cp, "resolve", lambda role, *, year=None: tmp_path / "missing.tif"
     )
     profile = {"inputs": {"eco_regions": "col-eco"}}
-    with pytest.raises(gate_d9.GateAbort) as e:
-        gate_d9._role_sweep(profile, [1984])
+    with pytest.raises(gate_level2.GateAbort) as e:
+        gate_level2._role_sweep(profile, [1984])
     assert e.value.step == "resolution"
     assert e.value.extra["role"] == "eco_regions"
 
 
 def test_role_sweep_empty_profile_is_noop():
-    assert gate_d9._role_sweep({}, [1984]) == []
+    assert gate_level2._role_sweep({}, [1984]) == []
 
 
 # ---------------------------------------------------------------------------
@@ -550,7 +551,7 @@ def test_checksum_golden_subtable(tmp_path, monkeypatch):
             return resolved_file if item["id"] == "resolved" else golden_dir
 
     monkeypatch.setattr(cp, "client", lambda: FakeClient())
-    monkeypatch.setattr(gate_d9.comparator, "band_checksum", lambda p: 7)
+    monkeypatch.setattr(gate_level2.comparator, "band_checksum", lambda p: 7)
 
     verification = {
         "checksum_assertions": [
@@ -561,7 +562,7 @@ def test_checksum_golden_subtable(tmp_path, monkeypatch):
             }
         ]
     }
-    records = gate_d9._run_checksum_assertions(verification)
+    records = gate_level2._run_checksum_assertions(verification)
     assert len(records) == 1
     assert records[0]["golden_form"] == "golden"
     assert records[0]["match"] is True
@@ -585,7 +586,7 @@ def test_checksum_golden_member_fallback(tmp_path, monkeypatch):
             return resolved_file
 
     monkeypatch.setattr(cp, "client", lambda: FakeClient())
-    monkeypatch.setattr(gate_d9.comparator, "band_checksum", lambda p: 5)
+    monkeypatch.setattr(gate_level2.comparator, "band_checksum", lambda p: 5)
 
     verification = {
         "checksum_assertions": [
@@ -596,7 +597,7 @@ def test_checksum_golden_member_fallback(tmp_path, monkeypatch):
             }
         ]
     }
-    records = gate_d9._run_checksum_assertions(verification)
+    records = gate_level2._run_checksum_assertions(verification)
     assert records[0]["golden_form"] == "golden_member"
     assert records[0]["match"] is True
 
@@ -620,7 +621,7 @@ def test_checksum_mismatch_aborts(tmp_path, monkeypatch):
     monkeypatch.setattr(cp, "client", lambda: FakeClient())
     # resolved vs golden differ by path -> different checksum
     monkeypatch.setattr(
-        gate_d9.comparator,
+        gate_level2.comparator,
         "band_checksum",
         lambda p: 1 if str(p).endswith("resolved.tif") else 2,
     )
@@ -633,8 +634,8 @@ def test_checksum_mismatch_aborts(tmp_path, monkeypatch):
             }
         ]
     }
-    with pytest.raises(gate_d9.GateAbort) as e:
-        gate_d9._run_checksum_assertions(verification)
+    with pytest.raises(gate_level2.GateAbort) as e:
+        gate_level2._run_checksum_assertions(verification)
     assert e.value.step == "checksum"
 
 
@@ -649,11 +650,11 @@ def test_verification_flag_selects_entry(tmp_path, monkeypatch):
         captured["vname"] = vname
         return ({}, _verification(), tmp_path / "fix", {"outputs": {}})
 
-    monkeypatch.setattr(gate_d9, "_load_profile_and_fixture", fake_load)
+    monkeypatch.setattr(gate_level2, "_load_profile_and_fixture", fake_load)
     monkeypatch.setattr(
-        gate_d9, "_import_paths", lambda: _fake_paths(tmp_path, [1984])
+        gate_level2, "_import_paths", lambda: _fake_paths(tmp_path, [1984])
     )
-    gate_d9.run_gate(
+    gate_level2.run_gate(
         _args(
             scratch_root=tmp_path / "scratch",
             skip_run=True,

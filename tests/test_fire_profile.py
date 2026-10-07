@@ -89,10 +89,11 @@ def test_input_collection_accessor(profile: dict) -> None:
         profiles.input_collection(profile, "no-such-role")
 
 
-def test_d9_carries_nlcd_mode_expected_diff(profile: dict) -> None:
+def test_level2_carries_nlcd_mode_expected_diff(profile: dict) -> None:
     # Both golden-diff entries declare the mode's measured, accepted per-column
     # difference on the nlcd_mode column (the legacy mode's dropped 1985
-    # double-count); the D9 gate treats it as pass-within-bound, not a FAIL.
+    # double-count); the level-2 gate treats it as pass-within-bound, not a
+    # FAIL.
     for name in ("level2", "level2_full"):
         v = profiles.verification_for(profile, name)
         assert v["kind"] == "golden-diff"

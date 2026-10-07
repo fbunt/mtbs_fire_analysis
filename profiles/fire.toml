@@ -163,7 +163,7 @@ wui_prox = "silvis-wui-proximity"
 
 # ---------------------------------------------------------------------------
 # Registered verifications (spec section 10). The platform ships the registry +
-# comparator primitives and names no dataset; this is the dataset binding the D9
+# comparator primitives and names no dataset; this is the dataset binding the level-2
 # gate harness and the level-1 equivalence harness read.
 
 # A level-2 golden-diff over the gate years: run the consumer's m10 reading every
@@ -192,7 +192,7 @@ lat = 1e-4
 # the wave-1 mode product reduces 1985-2022 once, so the level-1 gate measured
 # 19,091,590 CONUS pixels (0.12%) with a different modal class. m10's nlcd_mode
 # column inherits it at a fraction that depends on where that year's fires fell:
-# the full 39-year D9 run (2026-09-12) measured 0.14% (2019) to 1.62% (1988) of
+# the full 39-year level-2 run (2026-09-12) measured 0.14% (2019) to 1.62% (1988) of
 # rows per year, median ~0.25%, with 1988 / 2000 / 2002 above 1%. max_fraction =
 # 0.03 leaves margin over the measured peak while still catching a real
 # regression (a wrong mode would mismatch tens of percent of rows).
