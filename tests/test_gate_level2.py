@@ -95,13 +95,13 @@ def _args(**kw):
 
 
 def test_setup_environment_creates_layout_and_sets_env(tmp_path):
-    env = gate_level2._setup_environment(tmp_path / "scratch", "wave0-gate")
+    env = gate_level2._setup_environment(tmp_path / "scratch", "fire-legacy")
     scratch = tmp_path / "scratch"
     for sub in ("data", "data_tmp", "logs", "cache"):
         assert (scratch / sub).is_dir()
     assert os.environ["FIRE_DATA_ROOT"] == str(scratch.resolve())
     assert os.environ["FIRE_CATALOG"] == "1"
-    assert os.environ["FIRE_CATALOG_PROFILE"] == "wave0-gate"
+    assert os.environ["FIRE_CATALOG_PROFILE"] == "fire-legacy"
     assert os.environ["XDG_CACHE_HOME"] == str((scratch / "cache").resolve())
     assert os.environ.get("GDAL_PAM_PROXY_DIR")
     # PROJ must stay offline: network grid fetches made lon/lat inf in a dask
@@ -665,6 +665,6 @@ def test_verification_flag_selects_entry(tmp_path, monkeypatch):
     assert captured["vname"] == "level2_full"
 
 
-def test_verification_flag_defaults_to_d9(tmp_path):
+def test_verification_flag_defaults_to_level2(tmp_path):
     args = _args(scratch_root=tmp_path / "s", skip_run=True)
     assert args.verification == "level2"

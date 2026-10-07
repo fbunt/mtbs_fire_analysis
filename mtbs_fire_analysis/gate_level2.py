@@ -12,8 +12,8 @@ Run it as::
 
     uv run python -m mtbs_fire_analysis.gate_level2 \\
         --scratch-root <dir> [--years 1984 ...] [--skip-run] \\
-        [--skip-checksum] [--report <path.json>] [--profile fire|wave0-gate] \\
-        [--verification level2|level2_full]
+        [--skip-checksum] [--report <path.json>] \\
+        [--profile fire|fire-legacy] [--verification level2|level2_full]
 
 Steps, each logged and recorded in the JSON report:
 
@@ -783,7 +783,8 @@ def _get_parser() -> argparse.ArgumentParser:
         default="fire",
         help=(
             "Profile id carrying the [verification.*] tables "
-            "(fire = the wave-1 products; wave0-gate = the wave-0 imports)."
+            "(fire = the platform-built products; fire-legacy = the "
+            "imported legacy input closure)."
         ),
     )
     p.add_argument(

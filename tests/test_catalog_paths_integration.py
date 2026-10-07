@@ -4,10 +4,11 @@ Skipped unless JLAB_ROOT is set and its index/catalog.parquet exists.
 Read-only use of the store; the API (JLAB_API_URL) is optional -- the
 client falls back to the index.
 
-Parametrized over both profiles via FIRE_CATALOG_PROFILE: ``wave0-gate``
-(the legacy-* imports, always present here) and ``fire`` (the wave-1
-products, which self-skip until S9/S10 has produced them). Each param
-reloads the adapter so PROFILE_ID and the client cache pick up the env."""
+Parametrized over both profiles via FIRE_CATALOG_PROFILE: ``fire-legacy``
+(the imported legacy input closure, always present here) and ``fire`` (the
+platform-built products, which self-skip until they are built for every
+sample year). Each param reloads the adapter so PROFILE_ID and the client
+cache pick up the env."""
 
 from __future__ import annotations
 
@@ -40,14 +41,14 @@ pytestmark = pytest.mark.skipif(
 GATE_YEARS = (1984, 2005, 2010, 2022)
 
 
-@pytest.fixture(params=["wave0-gate", "fire"])
+@pytest.fixture(params=["fire-legacy", "fire"])
 def adapter(request, tmp_path, monkeypatch):
     """The catalog_paths module bound to the parametrized profile.
 
     Sets FIRE_CATALOG_PROFILE, reloads the module (so PROFILE_ID re-reads the
     env), and clears the client cache. The ``fire`` parametrization self-skips
-    until its products exist: if the profile binds ``mtbs_bs`` to a collection
-    with no 2010 Item, the wave-1 recipes (S9/S10) have not run yet."""
+    until its products exist: fire products are not built for every sample
+    year while any bound collection has no Item for one of them."""
     profile_id = request.param
     monkeypatch.setenv("FIRE_CATALOG_PROFILE", profile_id)
     # Keep perims_rasters symlinks out of the real user cache.
@@ -55,10 +56,10 @@ def adapter(request, tmp_path, monkeypatch):
     importlib.reload(cp)
     cp.client.cache_clear()
     if profile_id == "fire":
-        # Self-skip until EVERY bound product exists for the gate years: a
-        # partially built product set (S9 builds the gate years, S10 the rest)
-        # would otherwise fail these tests for a missing role rather than a
-        # broken adapter. Names the missing (role, year) pairs.
+        # Self-skip until EVERY bound product exists for the sample years: a
+        # partially built product set would otherwise fail these tests for a
+        # missing role rather than a broken adapter. Names the missing
+        # (role, year) pairs.
         c = cp.client()
         missing = []
         for role in cp.ROLES:
@@ -70,8 +71,8 @@ def adapter(request, tmp_path, monkeypatch):
             )
         if missing:
             pytest.skip(
-                "fire products not all built yet (S9/S10); unresolved: "
-                + ", ".join(missing)
+                "fire products are not built for every sample year; "
+                "unresolved: " + ", ".join(missing)
             )
     yield cp
     cp.client.cache_clear()

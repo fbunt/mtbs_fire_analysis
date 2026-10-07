@@ -10,10 +10,10 @@ the legacy `FIRE_DATA_ROOT` layout.
 This adapter carries NO collection literal.  Each input is named by a
 stable INPUT ROLE (see `ROLES`); the active profile's `[inputs]` table
 maps the role to the collection it resolves against
-(`jlab.profiles.input_collection`).  So the same adapter reads the
-wave-0 imported collections under the `wave0-gate` profile and the
-wave-1 products under the `fire` profile with no code change -- only the
-profile's role bindings differ.
+(`jlab.profiles.input_collection`).  So the same adapter reads
+`fire` (default) = the platform-built products, or `fire-legacy` = the
+imported legacy input closure, for regression runs, with no code change
+-- only the profile's role bindings differ.
 
 Enable rule (`catalog_enabled()`):
   * `FIRE_CATALOG` in {1, true, on}  -> enabled
@@ -37,8 +37,8 @@ from pathlib import Path
 
 # Profile that supplies the temporal resolve policies (NLCD floor, WUI
 # buckets) and the role -> collection input bindings this adapter reads.
-# Default `fire` = the wave-1 products; `wave0-gate` (the wave-0 imports) stays
-# selectable for regression runs.
+# `fire` (default) = the platform-built products; `fire-legacy` = the
+# imported legacy input closure, for regression runs.
 PROFILE_ID = os.environ.get("FIRE_CATALOG_PROFILE", "fire")
 
 _WUI_FLAVORS = ("bool", "class", "flag", "prox")
@@ -64,9 +64,9 @@ ROLES = (
     "wui_prox",
 )
 
-# The states product ships a `states.shp` member: both the wave-0 states
-# bundle and the wave-1 states product write this same member name, so it
-# is stable across profiles.
+# The states product ships a `states.shp` member: both the imported states
+# bundle and the platform states product ship this member name, so it is
+# stable across profiles.
 _STATES_MEMBER = "states.shp"
 
 
