@@ -12,7 +12,10 @@ scripts run over a large fixed data volume.
 
 ## Commands
 
-Environment is managed by `uv` (Python 3.12, pinned). The package is installed editable.
+Environment is managed by `uv`: `.venv` is built on a uv-managed CPython 3.12 (pinned in
+`.python-version`) and synced with `uv sync --locked`. The package is installed editable. The
+platform refuses to run m10 from a venv whose interpreter is not uv-managed or whose installed
+packages drift from `uv.lock`; `uv sync --locked` fixes the drift.
 
 ```bash
 # Run any pipeline/analysis module (they are package modules with __main__ blocks)
@@ -27,14 +30,33 @@ uv run ruff format .
 # Rasterization steps are bash + GNU parallel + gdal_rasterize, not Python:
 bash mtbs_fire_analysis/pipeline/m01_rasterize_perims.sh
 
-# Level-2 gate: run m10 over the gate years through the catalog into a scratch
-# FIRE_DATA_ROOT and diff each year against the frozen golden (jlab comparator).
+# Level-2 scratch harness: run m10 out of the platform over the gate years through
+# the catalog into a scratch FIRE_DATA_ROOT and diff each year against the frozen
+# golden (jlab comparator). For development and fire-legacy regression runs; it
+# writes nothing to the store. The product gate is `jlab verify --profile fire
+# --level 2` over the stored mtbs-pixel-events Items (run from the platform repo).
 # Smoke it read-only with --skip-run --skip-checksum (fixture hashes + resolution
 # sweep only; the sweep resolves every profile [inputs] role). --verification
 # selects level2 (gate years, default) or level2_full (all years 1984-2022). The full
 # gate (no flags) takes ~25-40 min. See gate_level2.py.
 uv run python -m mtbs_fire_analysis.gate_level2 --scratch-root <dir> [--skip-run] [--skip-checksum] [--verification level2|level2_full] [--report <path.json>]
 ```
+
+## m10 production runs on the platform
+
+Production m10 output is the platform collection `mtbs-pixel-events` (one table Item per year,
+1984-2022), produced by the platform recipe of that name from the platform repo
+(`pixi run jlab run --profile fire --only mtbs-pixel-events`; this profile's `[outputs]` and
+`[code]` authorize it). The platform resolves every input itself, runs m10 one year per node
+in a sandbox in this repo's `.venv`, and stores the parts with lineage. It runs the committed
+(HEAD) blobs of m10's import closure -- `mtbs_fire_analysis/{__init__,defaults,geohasher}.py`
+and `pipeline/{__init__,catalog_paths,m10_data_extract,paths}.py` -- and refuses while any of
+them, `pyproject.toml` or `uv.lock` is uncommitted; a committed edit to any of these files
+re-produces all 39 years. A module m10 newly imports must also be added to the platform
+recipe's `code_paths`, or the platform run fails with an `ImportError`. After changing this
+profile, re-register it with the platform (`jlab profile register <this repo>/profiles/fire.toml`):
+a stale registration refuses the run. Local `m10` runs and `gate_level2` remain the scratch
+path.
 
 Run the tests with `uv run pytest tests` (the catalog integration suite self-skips unless `JLAB_ROOT` points at a store with an index). There is no CI; also verify pipeline changes by running the relevant stage on a small year range.
 
@@ -94,6 +116,16 @@ plots `dt` distributions by eco-region and burn severity.
   `FIRE_CATALOG` (1/true/on vs 0/false/off); when unset it is on iff `JLAB_ROOT` or
   `JLAB_API_URL` is set. Resolution is eager at import and fails loudly if the platform is
   misconfigured (no silent fallback).
+- **Injected mode (platform runs).** When `JLAB_INPUTS` is set (the platform's recipe run sets
+  it; it wins over `FIRE_CATALOG`), the adapter serves the 12 names from that inputs manifest
+  (`{"schema": "jlab.entrypoint_inputs/v1", "inputs": {role: {path, collection, item, temporal_key, sha256}}}`, `temporal_key` being the requested year)
+  instead of the client: NLCD by requested year across the `nlcd`/`nlcd_pre`/`nlcd_post` roles,
+  WUI from `wui_<flavor>`, `PERIMS_RASTERS_PATH` holding one `dse_<year>.tif` symlink to the
+  manifest's `dse`. A missing role or year raises `CatalogResolveError`. It never imports
+  `jlab`, `paths.py` skips the repo `.env`, and every served path is appended to the file
+  `JLAB_INPUTS_USED` names; the platform fails the run unless the served and declared inputs
+  match. The manifest roles are the platform recipe's (`tests/test_catalog_paths_injected.py`
+  pins them).
 - **Dask memory is treated as hostile.** Existing code sets `MALLOC_TRIM_THRESHOLD_`, wraps
   raster loads in throwaway fetcher functions so graphs get GC'd, and prefers polars for the
   big joins. Preserve these patterns; don't hold dask graph references in scope after compute.
