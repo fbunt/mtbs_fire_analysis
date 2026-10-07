@@ -5,7 +5,7 @@ jlab client against the imported platform store, then diffs each year's output
 against a frozen golden fixture with the platform's dataset-agnostic comparator
 (``jlab.comparator``). The dataset binding -- sort keys, exclusions, tolerance,
 the fixture path, the checksum assertions -- comes entirely from the profile's
-``[verification.d9]`` table (``jlab.profiles.verification_for``); this harness
+``[verification.level2]`` table (``jlab.profiles.verification_for``); this harness
 names no column.
 
 Run it as::
@@ -13,12 +13,12 @@ Run it as::
     uv run python -m mtbs_fire_analysis.gate_d9 \\
         --scratch-root <dir> [--years 1984 ...] [--skip-run] \\
         [--skip-checksum] [--report <path.json>] [--profile fire|wave0-gate] \\
-        [--verification d9|d9_full]
+        [--verification level2|level2_full]
 
 Steps, each logged and recorded in the JSON report:
 
-  0. Load the profile and the ``--verification`` entry (``d9`` gate years, or
-     ``d9_full`` all years), resolve the fixture under ``JLAB_ROOT``, and
+  0. Load the profile and the ``--verification`` entry (``level2`` gate years, or
+     ``level2_full`` all years), resolve the fixture under ``JLAB_ROOT``, and
      ``verify_fixture_hashes`` -- a mismatch aborts (the oracle rotted).
   1. Point ``FIRE_DATA_ROOT`` at the scratch tree, set ``FIRE_CATALOG=1`` and
      the client's PAM proxy, confine caches to the scratch tree, and pin
@@ -92,9 +92,9 @@ def _log(msg: str) -> None:
 # step 0: profile + fixture + oracle hash check
 
 
-def _load_profile_and_fixture(profile_id: str, verification_name: str = "d9"):
-    """Load the profile and its ``verification_name`` verification (``d9`` or
-    ``d9_full``), resolve the fixture dir under ``JLAB_ROOT`` (env, or the repo
+def _load_profile_and_fixture(profile_id: str, verification_name: str = "level2"):
+    """Load the profile and its ``verification_name`` verification (``level2`` or
+    ``level2_full``), resolve the fixture dir under ``JLAB_ROOT`` (env, or the repo
     ``.env`` via python-dotenv), and read the fixture ``manifest.json``.
     Returns ``(profile, verification, fixture_dir, manifest)``. Raises
     ``GateAbort`` when unconfigured."""
@@ -784,10 +784,10 @@ def _get_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--verification",
-        default="d9",
-        choices=["d9", "d9_full"],
-        help="Which registered golden-diff verification to run: 'd9' (the "
-        "gate years, default) or 'd9_full' (all years 1984-2022).",
+        default="level2",
+        choices=["level2", "level2_full"],
+        help="Which registered golden-diff verification to run: 'level2' (the "
+        "gate years, default) or 'level2_full' (all years 1984-2022).",
     )
     return p
 

@@ -31,9 +31,9 @@ bash mtbs_fire_analysis/pipeline/m01_rasterize_perims.sh
 # FIRE_DATA_ROOT and diff each year against the frozen golden (jlab comparator).
 # Smoke it read-only with --skip-run --skip-checksum (fixture hashes + resolution
 # sweep only; the sweep resolves every profile [inputs] role). --verification
-# selects d9 (gate years, default) or d9_full (all years 1984-2022). The full
+# selects level2 (gate years, default) or level2_full (all years 1984-2022). The full
 # gate (no flags) takes ~25-40 min. See gate_d9.py.
-uv run python -m mtbs_fire_analysis.gate_d9 --scratch-root <dir> [--skip-run] [--skip-checksum] [--verification d9|d9_full] [--report <path.json>]
+uv run python -m mtbs_fire_analysis.gate_d9 --scratch-root <dir> [--skip-run] [--skip-checksum] [--verification level2|level2_full] [--report <path.json>]
 ```
 
 Run the tests with `uv run pytest tests` (the catalog integration suite self-skips unless `JLAB_ROOT` points at a store with an index). There is no CI; also verify pipeline changes by running the relevant stage on a small year range.

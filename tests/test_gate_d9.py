@@ -658,12 +658,12 @@ def test_verification_flag_selects_entry(tmp_path, monkeypatch):
             scratch_root=tmp_path / "scratch",
             skip_run=True,
             skip_checksum=True,
-            verification="d9_full",
+            verification="level2_full",
         )
     )
-    assert captured["vname"] == "d9_full"
+    assert captured["vname"] == "level2_full"
 
 
 def test_verification_flag_defaults_to_d9(tmp_path):
     args = _args(scratch_root=tmp_path / "s", skip_run=True)
-    assert args.verification == "d9"
+    assert args.verification == "level2"
