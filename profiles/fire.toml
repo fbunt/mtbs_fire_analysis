@@ -3,8 +3,7 @@
 # THIS is the project. It lives in the consumer repo (fire_analysis), not in the
 # platform, and carries only VALUES: the query (which products this analysis
 # uses), the temporal resolve policies, the role -> collection input bindings the
-# consumer adapter reads, the collections it produces and its code kind, and the
-# registered verifications. It is submitted to
+# consumer adapter reads, and the registered verifications. It is submitted to
 # the platform's execute-and-catalog entrypoint BY PATH and registered/served
 # read-only by the platform (`jlab profile register <this file>`); the platform
 # repo carries only a synthetic example profile. All the dataset vocabulary lives
@@ -30,9 +29,8 @@ mask = "conus"
 [selection]
 # The query form is an explicit collection-id list: the 21 PRODUCT
 # collections plus the 8 RAW collections they derive from (confirmed against each
-# datasets/<product>/recipe.toml `[inputs.*] collection`), and the collection this
-# project produces (see [outputs]). The raw collections are selected so the client
-# resolves them as recipe inputs.
+# datasets/<product>/recipe.toml `[inputs.*] collection`). The raw collections
+# are selected so the client resolves them as recipe inputs.
 collections = [
   # products
   "epa-ecoregions",
@@ -65,16 +63,14 @@ collections = [
   "raw-nlcd-c1v2",
   "raw-edna-dem",
   "raw-wui-blocks-v4",
-  # produced by this project (m10's per-year pixel events)
-  "mtbs-pixel-events",
 ]
 
 # Per-collection temporal resolve policy bindings (jlab.resolve kinds). Lookup is
 # exact-id-first, then the first fnmatch glob in file order.
 
 [policies."nlcd-landcover-c1v2"]
-# NLCD is catalogued 1985-2023 (no 1984 Item); a year 1984 floors to 1985 and
-# resolves to the nearest earlier available year.
+# NLCD is catalogued at its true 1985-2022 extent (no 1984 Item); a gate year
+# 1984 floors to 1985 and resolves to the nearest earlier available year.
 kind = "nearest-earlier-with-floor"
 floor = 1985
 
@@ -165,16 +161,6 @@ wui_class = "silvis-wui-class"
 wui_bool = "silvis-wui-bool"
 wui_prox = "silvis-wui-proximity"
 
-# Role -> collection the project PRODUCES. Every value must be a selected
-# collection; it authorizes the platform to run this repo's code to produce it.
-[outputs]
-pixel_events = "mtbs-pixel-events"
-
-# The project's code is a uv project: the platform runs it from the git toplevel
-# of this registered file, in that project's own uv venv, checked against its lock.
-[code]
-kind = "uv-project"
-
 # ---------------------------------------------------------------------------
 # Registered verifications (spec section 10). The platform ships the registry +
 # comparator primitives and names no dataset; this is the dataset binding the level-2
@@ -184,9 +170,6 @@ kind = "uv-project"
 # input through the client, then diff each year against the frozen golden fixture.
 [verification.level2]
 kind = "golden-diff"
-# The stored product `jlab verify --level 2` diffs per year against the fixture;
-# the scratch harness (gate_level2) ignores it.
-collection = "mtbs-pixel-events"
 # Fixture path RELATIVE to the store root (JLAB_ROOT); the frozen read-only oracle.
 fixture = ".fixtures/m10-golden-20260831"
 years = [1984, 2005, 2010, 2022]
@@ -232,7 +215,6 @@ golden = { collection = "legacy-nlcd", year = 1985, member = "Annual_NLCD_LndCov
 # The full-extent golden-diff: every year 1984-2022 against the full golden.
 [verification.level2_full]
 kind = "golden-diff"
-collection = "mtbs-pixel-events"
 fixture = ".fixtures/m10-golden-full-20260831"
 years = [
   1984, 1985, 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993,

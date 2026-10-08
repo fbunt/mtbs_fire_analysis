@@ -7,11 +7,7 @@ from dotenv import load_dotenv
 # if present. Precedence: a shell env var wins over .env, which wins over the
 # server default below (override=False, the dotenv default). On the
 # server there is no .env, so this is a no-op and the default is used.
-# Skipped whenever JLAB_INPUTS is set (the platform runs this code as a
-# recipe and injects every input): nothing may come from a repo .env then,
-# wherever __file__ resolves.
-if not os.environ.get("JLAB_INPUTS"):
-    load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 MAIN_FOLDER_ALIAS = Path(
     os.environ.get(
@@ -106,17 +102,15 @@ def get_points_combined_path(years, aoi_code):
     )
 
 
-# --- Catalog-backed rebinding -----------------------------------------------
+# --- Catalog-backed rebinding (jlab client) ---------------------------------
 # When the catalog is enabled (see catalog_paths.catalog_enabled), the 12
-# catalog-backed names below are served from the platform store instead of the
-# FIRE_DATA_ROOT layout above: from the inputs manifest the platform injects
-# (JLAB_INPUTS set), else via the jlab client. Each resolve() argument is an
-# INPUT ROLE (catalog_paths.ROLES), not a collection literal: the manifest, or
-# the active profile's [inputs] table, maps the role to its input. The 9
-# constants resolve eagerly here (a mounted store makes localize cheap); the 3
-# builders bind by reference. Every other name in this module (scratch,
-# results, cache, raw layout, get_points_path) stays on the FIRE_DATA_ROOT
-# layout untouched.
+# catalog-backed names below are served from the platform store via the jlab
+# client instead of the FIRE_DATA_ROOT layout above. Each resolve() argument is
+# an INPUT ROLE (catalog_paths.ROLES), not a collection literal: the active
+# profile's [inputs] table maps the role to a collection. The 9 constants
+# resolve eagerly here (a mounted store makes localize cheap); the 3 builders
+# bind by reference. Every other name in this module (scratch, results, cache,
+# raw layout, get_points_path) stays on the FIRE_DATA_ROOT layout untouched.
 #
 # Resolution is eager and NOT wrapped in a fallback: a misconfigured platform
 # must fail loudly at import with the CatalogResolveError/ClientError message,

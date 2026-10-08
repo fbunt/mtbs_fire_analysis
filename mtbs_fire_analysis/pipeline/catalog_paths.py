@@ -1,26 +1,11 @@
-"""Catalog-backed path adapter for the pipeline.
+"""Catalog-backed path adapter for the pipeline (jlab client).
 
-Serves the catalog-backed inputs `m10` needs as local `pathlib.Path`s, in
-one of two modes.  `paths.py` rebinds exactly the 12 catalog-backed names
-to this module when `catalog_enabled()`; every other path in `paths.py`
-(scratch, results, cache, raw layout) stays on the legacy
-`FIRE_DATA_ROOT` layout.
-
-Injected mode (`JLAB_INPUTS` set; wins over `FIRE_CATALOG`): the platform
-runs `m10` as a recipe and has already resolved every input.
-`JLAB_INPUTS` names its inputs manifest (schema
-`jlab.entrypoint_inputs/v1`: `{schema, inputs: {role: {path, collection,
-item, temporal_key, sha256}}}`, `temporal_key` being the year the recipe
-REQUESTED, not the one a policy picked).  Each name is served from the
-manifest entry of its role; NLCD is looked up by requested year across
-the `nlcd`, `nlcd_pre` and `nlcd_post` roles.  A role or year the
-manifest lacks is a `CatalogResolveError`.  This mode never imports jlab,
-and `paths.py` skips the repo `.env`.  Every served input is appended,
-one manifest path per line, to the file `JLAB_INPUTS_USED` names, which
-the platform compares with the declared inputs.
-
-Client mode (the jlab thin client): resolves each input through
-`jlab.client.Client.find()` / `localize()` against the platform store.
+Resolves the catalog-backed inputs `m10` needs through the jlab thin
+client (`jlab.client.Client.find()` / `localize()`) against the platform
+store, returning local `pathlib.Path`s.  `paths.py` rebinds exactly the
+12 catalog-backed names to this module when `catalog_enabled()`; every
+other path in `paths.py` (scratch, results, cache, raw layout) stays on
+the legacy `FIRE_DATA_ROOT` layout.
 
 This adapter carries NO collection literal.  Each input is named by a
 stable INPUT ROLE (see `ROLES`); the active profile's `[inputs]` table
@@ -31,7 +16,6 @@ imported legacy input closure, for regression runs, with no code change
 -- only the profile's role bindings differ.
 
 Enable rule (`catalog_enabled()`):
-  * `JLAB_INPUTS` set -> enabled, injected mode
   * `FIRE_CATALOG` in {1, true, on}  -> enabled
   * `FIRE_CATALOG` in {0, false, off} -> disabled
   * `FIRE_CATALOG` unset -> enabled iff `JLAB_ROOT` or `JLAB_API_URL` is
@@ -41,14 +25,12 @@ Enable rule (`catalog_enabled()`):
 The client finds the index via `JLAB_ROOT` and the API via
 `JLAB_API_URL`.  Temporal substitutions (NLCD 1984->1985, WUI decade
 buckets) are done INSIDE the client by the loaded profile's resolve
-policies (in injected mode, by the platform before the run); this
-adapter contains no year arithmetic.
+policies; this adapter contains no year arithmetic.
 """
 
 from __future__ import annotations
 
 import functools
-import json
 import os
 import re
 from pathlib import Path
@@ -87,16 +69,6 @@ ROLES = (
 # stable across profiles.
 _STATES_MEMBER = "states.shp"
 
-# Injected mode: the env vars the platform sets and the manifest schema.
-INPUTS_ENV = "JLAB_INPUTS"
-INPUTS_USED_ENV = "JLAB_INPUTS_USED"
-MANIFEST_SCHEMA = "jlab.entrypoint_inputs/v1"
-
-# The manifest roles that carry NLCD years: m10 reads NLCD at the year, the
-# year before and the year after, and the recipe requests each as its own
-# role.
-NLCD_ROLES = ("nlcd", "nlcd_pre", "nlcd_post")
-
 
 class CatalogResolveError(RuntimeError):
     """A catalog input did not resolve to exactly one localizable path
@@ -116,16 +88,9 @@ def client():
     return Client(profile=PROFILE_ID)
 
 
-def injected():
-    """Whether the platform injected the inputs (`JLAB_INPUTS` is set)."""
-    return bool(os.environ.get(INPUTS_ENV))
-
-
 def catalog_enabled():
     """Whether `paths.py` should serve catalog-backed inputs.  See the
     module docstring for the truth table."""
-    if injected():
-        return True
     v = os.environ.get("FIRE_CATALOG")
     if v is not None:
         s = v.strip().lower()
@@ -134,77 +99,6 @@ def catalog_enabled():
         if s in ("0", "false", "off"):
             return False
     return bool(os.environ.get("JLAB_ROOT") or os.environ.get("JLAB_API_URL"))
-
-
-def _manifest():
-    """The `inputs` table of the manifest `JLAB_INPUTS` names."""
-    path = os.environ.get(INPUTS_ENV, "")
-    try:
-        doc = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, ValueError) as e:
-        raise CatalogResolveError(
-            f"cannot read the inputs manifest {path!r}: {e}"
-        ) from e
-    if (
-        not isinstance(doc, dict)
-        or doc.get("schema") != MANIFEST_SCHEMA
-        or not isinstance(doc.get("inputs"), dict)
-    ):
-        raise CatalogResolveError(
-            f"inputs manifest {path!r} is not a {MANIFEST_SCHEMA} document"
-        )
-    return doc["inputs"]
-
-
-def _manifest_entry(role):
-    """The manifest entry of `role`; a missing role is an error."""
-    entry = _manifest().get(role)
-    if not isinstance(entry, dict) or not entry.get("path"):
-        raise CatalogResolveError(
-            f"input role {role!r} is not in the inputs manifest "
-            f"{os.environ.get(INPUTS_ENV)!r}"
-        )
-    return entry
-
-
-def _serve(path):
-    """Record `path` (a manifest path, verbatim) as served in the file
-    `JLAB_INPUTS_USED` names, when set, and return it as a `Path`."""
-    used = os.environ.get(INPUTS_USED_ENV)
-    if used:
-        with open(used, "a", encoding="utf-8") as fh:
-            fh.write(f"{path}\n")
-    return Path(path)
-
-
-def _injected_resolve(role, year):
-    """Serve `role` from the manifest.  With a `year`, the role's
-    requested temporal key must equal it."""
-    entry = _manifest_entry(role)
-    if year is not None and entry.get("temporal_key") != year:
-        raise CatalogResolveError(
-            f"input role {role!r} was requested at "
-            f"{entry.get('temporal_key')!r} in the inputs manifest, "
-            f"not at year {year!r}"
-        )
-    return _serve(entry["path"])
-
-
-def _injected_nlcd(year):
-    """Serve the NLCD role whose requested temporal key is `year`."""
-    inputs = _manifest()
-    for role in NLCD_ROLES:
-        entry = inputs.get(role)
-        if (
-            isinstance(entry, dict)
-            and entry.get("path")
-            and entry.get("temporal_key") == year
-        ):
-            return _serve(entry["path"])
-    raise CatalogResolveError(
-        f"no NLCD role {NLCD_ROLES} in the inputs manifest was requested "
-        f"at year {year!r}"
-    )
 
 
 def _collection_for(role):
@@ -227,12 +121,7 @@ def resolve(role, *, year=None):
     The profile's `[inputs]` table maps `role` to a collection; `find()`
     must then return EXACTLY one item -- zero or many is a
     `CatalogResolveError` naming the role, the collection, the year, and
-    the candidate ids.  Never falls back to a `FIRE_DATA_ROOT` path.
-
-    In injected mode the role's manifest entry is served instead (see
-    the module docstring)."""
-    if injected():
-        return _injected_resolve(role, year)
+    the candidate ids.  Never falls back to a `FIRE_DATA_ROOT` path."""
     collection = _collection_for(role)
     items = client().find(collection, year=year)
     if len(items) != 1:
@@ -249,15 +138,12 @@ def states_path():
     role).
 
     The states product localizes as the artifact DIRECTORY (a multi-member
-    bundle), or, in injected mode, as that directory or its `.shp` member;
-    assert the `.shp` member exists."""
-    located = Path(resolve("states"))
-    shp = (
-        located if located.name == _STATES_MEMBER else located / _STATES_MEMBER
-    )
+    bundle); assert the `.shp` member exists."""
+    directory = resolve("states")
+    shp = Path(directory) / _STATES_MEMBER
     if not shp.exists():
         raise CatalogResolveError(
-            f"states bundle at {located} has no {_STATES_MEMBER} member"
+            f"states bundle at {directory} has no {_STATES_MEMBER} member"
         )
     return shp
 
@@ -276,10 +162,7 @@ def get_mtbs_raster_path(year, aoi_code):
 def get_nlcd_raster_path(year):
     """NLCD land-cover raster for `year` (`nlcd` role).  The profile's
     nearest-earlier-with-floor(1985) policy does the 1984->1985
-    substitution inside the client; no year arithmetic here.  In injected
-    mode the year selects among the `NLCD_ROLES` by requested key."""
-    if injected():
-        return _injected_nlcd(year)
+    substitution inside the client; no year arithmetic here."""
     return resolve("nlcd", year=year)
 
 
@@ -334,31 +217,11 @@ def perims_rasters_dir():
     Lives under `$XDG_CACHE_HOME/mtbs_fire_analysis/perims_rasters/`
     (fallback `~/.cache`).  Idempotent (re-links only when the target
     changed) and never deletes anything else in the directory.  `m10`
-    composes `<dir>/dse_{year}.tif` itself.
-
-    In injected mode the directory holds only `dse_<year>.tif`, a symlink
-    to the manifest's `dse` path at its requested year: any other
-    `dse_*.tif` symlink is removed, and the manifest path (not the
-    symlink) is recorded as served."""
+    composes `<dir>/dse_{year}.tif` itself."""
     cache = os.environ.get("XDG_CACHE_HOME")
     base = Path(cache) if cache else Path.home() / ".cache"
     directory = base / "mtbs_fire_analysis" / "perims_rasters"
     directory.mkdir(parents=True, exist_ok=True)
-    if injected():
-        entry = _manifest_entry("dse")
-        year = entry.get("temporal_key")
-        if not isinstance(year, int) or isinstance(year, bool):
-            raise CatalogResolveError(
-                f"input role 'dse' needs an integer year temporal key in "
-                f"the inputs manifest, got {year!r}"
-            )
-        name = f"dse_{year}.tif"
-        for stale in directory.glob("dse_*.tif"):
-            if stale.name != name and stale.is_symlink():
-                stale.unlink()
-        _ensure_symlink(directory / name, entry["path"])
-        _serve(entry["path"])
-        return directory
     for item in client().find(_collection_for("dse")):
         year = _dse_year(item)
         target = client().localize(item)

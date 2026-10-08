@@ -44,18 +44,8 @@ def profile() -> dict:
 
 def test_loads_and_validates(profile: dict) -> None:
     assert profile["id"] == "fire"
-    # 21 products + 8 raw inputs + the 1 collection the project produces.
-    assert len(profile["selection"]["collections"]) == 30
-
-
-def test_outputs_and_code(profile: dict) -> None:
-    selected = set(profile["selection"]["collections"])
-    assert profile["outputs"] == {"pixel_events": "mtbs-pixel-events"}
-    assert set(profile["outputs"].values()) <= selected
-    assert profile["code"] == {"kind": "uv-project"}
-    for name in ("level2", "level2_full"):
-        v = profiles.verification_for(profile, name)
-        assert v["collection"] == "mtbs-pixel-events"
+    # 21 products + 8 raw inputs.
+    assert len(profile["selection"]["collections"]) == 29
 
 
 def test_inputs_are_selected_collections(profile: dict) -> None:
